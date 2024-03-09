@@ -14,9 +14,13 @@ services:
       envVarKey: RENDER_EXTERNAL_URL
   - key: PORT
     value: 3000
+  - key: MONGODB_URI
+    fromService:
+      type: pserv
+      name: mongodb
 
-- type: pserv
-  name: dandelion-db
-  env: docker
-  plan: free
-  autoDeploy: false
+#- type: pserv
+  #name: dandelion-db
+  #env: docker
+  #plan: free
+  #autoDeploy: false
