@@ -11,13 +11,12 @@ services:
     fromService:
       type: web
       name: dandelion-web
+      envVarKey: RENDER_EXTERNAL_URL
+  - key: PORT
+    value: 3000
 
 - type: pserv
   name: dandelion-db
   env: docker
   plan: free
   autoDeploy: false
-  disk:
-    name: data
-    mountPath: /data/db
-    sizeGB: 10
