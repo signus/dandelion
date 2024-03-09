@@ -4,7 +4,7 @@ services:
   env: ruby
   plan: free
   buildCommand: "bundle config path vendor/bundle && bundle install --jobs 4 --retry 3"
-  startCommand: "bundle exec puma -C config/puma.rb"
+  startCommand: "bundle exec puma -C config/puma.rb production"
   autoDeploy: false
   envVars:
   - key: FRONTEND_URL
