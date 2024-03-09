@@ -18,6 +18,7 @@ services:
     fromService:
       type: pserv
       name: mongodb
+      property: hostport
 
 #- type: pserv
   #name: dandelion-db
