@@ -84,12 +84,7 @@ module Dandelion
     end
 
     error do
-      Airbrake.notify(env['sinatra.error'],
-                      url: "#{ENV['BASE_URI']}#{request.path}",
-                      current_account: (JSON.parse(current_account.to_json) if current_account),
-                      params: params,
-                      request: request.env.select { |_k, v| v.is_a?(String) },
-                      session: session)
+      airbrake_notify(env['sinatra.error'])
       if content_type == :html
         erb :error, layout: :application
       else
@@ -185,11 +180,28 @@ module Dandelion
       end
     end
 
-    get '/birthdays' do
+    get '/birthdays', provides: [:html, :ics] do
       sign_in_required!
-      @account_ids = current_account.following.ids_by_next_birthday
-      @account_ids = @account_ids.paginate(page: params[:page], per_page: 20)
-      erb :birthdays
+      case content_type
+      when :html
+        @account_ids = current_account.following.ids_by_next_birthday
+        @account_ids = @account_ids.paginate(page: params[:page], per_page: 20)
+        erb :birthdays
+      when :ics
+        cal = Icalendar::Calendar.new
+        cal.append_custom_property('X-WR-CALNAME', 'Birthdays')
+        current_account.following.each do |account|
+          next unless account.date_of_birth
+
+          cal.event do |e|
+            e.summary = "#{account.name}'s #{(account.age + 1).ordinalize} birthday"
+            e.dtstart = Icalendar::Values::Date.new(account.next_birthday.to_date)
+            e.description = %(#{ENV['BASE_URI']}/u/#{account.username})
+            e.uid = account.id.to_s
+          end
+        end
+        cal.to_ical
+      end
     end
 
     get '/notifications/:id' do

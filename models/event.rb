@@ -635,8 +635,12 @@ class Event
       cap
     else
       begin
-        five_percent_of_ticket_sales = Money.new(tickets.complete.sum(:discounted_price) * 0.05 * 100, currency).exchange_to('GBP')
-        [cap, five_percent_of_ticket_sales].min
+        if ticket_types.empty?
+          cap
+        else
+          five_percent_of_ticket_sales = Money.new(tickets.complete.sum(:discounted_price) * 0.05 * 100, currency).exchange_to('GBP')
+          [cap, five_percent_of_ticket_sales].min
+        end
       rescue StandardError
         cap
       end
@@ -735,7 +739,7 @@ class Event
     errors.add(:end_time, 'must be after the start time') if end_time && start_time && end_time <= start_time
   end
 
-  validates_presence_of :name, :start_time, :end_time, :location
+  validates_presence_of :name, :start_time, :end_time, :location, :currency
   validates_uniqueness_of :slug, allow_nil: true
   validates_format_of :slug, with: /\A[a-z0-9-]+\z/, if: :slug
 
@@ -800,7 +804,7 @@ class Event
   end
 
   def self.legit
-    self.and(:id.in => TicketType.pluck(:event_id), :organisation_id.in => Organisation.and(:hidden.ne => true).pluck(:id))
+    self.and(:organisation_id.in => Organisation.and(:hidden.ne => true).pluck(:id))
   end
 
   def self.draft
@@ -949,6 +953,33 @@ class Event
 
   def self.edit_hints
     {}.merge(new_hints)
+  end
+
+  def ical(order: nil)
+    event = self
+    cal = Icalendar::Calendar.new
+    cal.append_custom_property('METHOD', 'REQUEST') if order
+    cal.event do |e|
+      e.summary = (event.start_time.to_date == event.end_time.to_date ? event.name : "#{event.name} starts")
+      e.dtstart = (event.start_time.to_date == event.end_time.to_date ? event.start_time.utc.strftime('%Y%m%dT%H%M%SZ') : Icalendar::Values::Date.new(event.start_time.to_date))
+      e.dtend = (event.start_time.to_date == event.end_time.to_date ? event.end_time.utc.strftime('%Y%m%dT%H%M%SZ') : nil)
+      e.transp = (event.start_time.to_date == event.end_time.to_date ? 'OPAQUE' : 'TRANSPARENT')
+      e.location = event.location
+      e.description = order ? %(#{ENV['BASE_URI']}/orders/#{order.id}) : %(#{ENV['BASE_URI']}/events/#{event.id})
+      e.organizer = event.email
+      e.uid = event.id.to_s
+      if order
+        e.status = 'CONFIRMED'
+        e.attendee = Icalendar::Values::CalAddress.new(
+          "mailto:#{order.account.email}",
+          cn: order.account.email,
+          role: 'REQ-PARTICIPANT',
+          partstat: 'ACCEPTED',
+          cutype: 'INDIVIDUAL'
+        )
+      end
+    end
+    cal
   end
 
   def sold_out?

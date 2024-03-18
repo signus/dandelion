@@ -95,6 +95,7 @@ class Account
       email: :email,
       name: :text,
       name_transliterated: { type: :text, disabled: true },
+      api_key: :text,
       updated_profile: :check_box,
       default_currency: :select,
       phone: :text,
@@ -183,6 +184,8 @@ class Account
         self.username = u
       end
     end
+
+    self.api_key = SecureRandom.uuid unless api_key
 
     self.name = username unless name
     self.name = name.split('@').first if name && name.include?('@')
@@ -561,7 +564,7 @@ class Account
   def self.new_hints
     {
       location: 'Used for connecting you with events near you. Never displayed publicly without your consent.',
-      date_of_birth: 'We use this to calculate your age.'
+      date_of_birth: 'Never displayed publicly, though you can choose to show your age.'
     }
   end
 

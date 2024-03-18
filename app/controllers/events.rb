@@ -51,20 +51,19 @@ Dandelion::App.controller do
       end
     when :ics
       @events = @events.current(3.months.ago)
-      cal = RiCal.Calendar do |rcal|
-        rcal.add_x_property('X-WR-CALNAME', 'Dandelion')
-        @events.each do |event|
-          rcal.event do |revent|
-            revent.summary = (event.start_time.to_date == event.end_time.to_date ? event.name : "#{event.name} starts")
-            revent.dtstart = (event.start_time.to_date == event.end_time.to_date ? event.start_time : event.start_time.to_date)
-            revent.dtend = (event.start_time.to_date == event.end_time.to_date ? event.end_time : event.start_time.to_date)
-            revent.location = event.location
-            revent.description = %(#{ENV['BASE_URI']}/events/#{event.id})
-            revent.uid = event.id.to_s
-          end
+      cal = Icalendar::Calendar.new
+      cal.append_custom_property('X-WR-CALNAME', 'Dandelion')
+      @events.each do |event|
+        cal.event do |e|
+          e.summary = (event.start_time.to_date == event.end_time.to_date ? event.name : "#{event.name} starts")
+          e.dtstart = (event.start_time.to_date == event.end_time.to_date ? event.start_time.utc.strftime('%Y%m%dT%H%M%SZ') : Icalendar::Values::Date.new(event.start_time.to_date))
+          e.dtend = (event.start_time.to_date == event.end_time.to_date ? event.end_time.utc.strftime('%Y%m%dT%H%M%SZ') : nil)
+          e.location = event.location
+          e.description = %(#{ENV['BASE_URI']}/events/#{event.id})
+          e.uid = event.id.to_s
         end
       end
-      cal.export
+      cal.to_ical
     end
   end
 
@@ -190,18 +189,7 @@ Dandelion::App.controller do
         organisation_revenue_share: @event.organisation_revenue_share
       }.to_json
     when :ics
-      event = @event
-      cal = RiCal.Calendar do |rcal|
-        rcal.event do |revent|
-          revent.summary = (event.start_time.to_date == event.end_time.to_date ? event.name : "#{event.name} starts")
-          revent.dtstart = (event.start_time.to_date == event.end_time.to_date ? event.start_time : event.start_time.to_date)
-          revent.dtend = (event.start_time.to_date == event.end_time.to_date ? event.end_time : event.start_time.to_date)
-          revent.location = event.location
-          revent.description = %(#{ENV['BASE_URI']}/events/#{event.id})
-          revent.uid = event.id.to_s
-        end
-      end
-      cal.export
+      @event.ical.to_ical
     end
   end
 
@@ -329,7 +317,7 @@ Dandelion::App.controller do
     Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
   end
 
-  get '/orders/:id', provides: [:html, :pdf] do
+  get '/orders/:id', provides: %i[html pdf ics] do
     @order = Order.find(params[:id]) || not_found
     @event = @order.event
     event = @event
@@ -349,6 +337,8 @@ Dandelion::App.controller do
     case content_type
     when :html
       Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
+    when :ics
+      @event.ical(order: @order).to_ical
     when :pdf
       order.tickets_pdf.render
     end
