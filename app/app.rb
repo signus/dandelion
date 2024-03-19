@@ -1,3 +1,4 @@
+require 'mongoid'
 module Dandelion
   class App < Padrino::Application
     register Padrino::Rendering

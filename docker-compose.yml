@@ -1,0 +1,33 @@
+# docker-compose.yml
+---
+services:
+  dandelion-web:
+    container_name: dandelion-web
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - "dandelion-db"
+    ports:
+      - "8080:5000"
+    networks:
+      - "dandelion-net"
+
+  dandelion-db:
+    image: mongo:latest
+    container_name: dandelion-db
+    restart: unless-stopped
+    volumes:
+      - dandelion-db-data:/var/lib/postgresql/data
+    environment:
+      - "MONGO_INITDB_ROOT_USERNAME=root"
+      - "MONGO_INITDB_ROOT_PASSWORD=example"
+    networks:
+      - "dandelion-net"
+
+networks:
+  dandelion-net:
+
+volumes:
+  dandelion-db-data:

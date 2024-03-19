@@ -2,8 +2,7 @@
 log/**/*
 tmp/**/*
 bin/*
-vendor/gems/*
-!vendor/gems/cache/
+vendor/**
 .sass-cache/*
 nbproject
 .env
@@ -31,6 +30,7 @@ spec/reports
 test/tmp
 test/version_tmp
 tmp
+Gemfile.lock
 
 # YARD artifacts
 .yardoc
