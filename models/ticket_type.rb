@@ -15,12 +15,17 @@ class TicketType
   field :range_max, type: Float
   field :max_quantity_per_transaction, type: Integer
   field :minimum_monthly_donation, type: Float
+  field :sales_end, type: Time
 
   attr_writer :price_or_range
   attr_accessor :price_or_range_submitted
 
   def price_or_range
-    @price_or_range || ("#{range_min}-#{range_max}" if range_min && range_max) || price
+    @price_or_range || (
+      if range_min && range_max
+        "#{range_min.to_i == range_min ? range_min.to_i : range_min}-#{range_max.to_i == range_max ? range_max.to_i : range_max}"
+      end
+    ) || (price.to_i == price ? price.to_i : price)
   end
 
   def self.admin_fields
@@ -35,6 +40,7 @@ class TicketType
       minimum_monthly_donation: :number,
       hidden: :check_box,
       max_quantity_per_transaction: :number,
+      sales_end: :datetime,
       event_id: :lookup,
       tickets: :collection
     }
@@ -102,6 +108,10 @@ class TicketType
   handle_asynchronously :send_payment_reminder
 
   def remaining
+    (quantity || 0) - tickets.and(made_available_at: nil).count
+  end
+
+  def remaining_including_made_available
     (quantity || 0) - tickets.count
   end
 

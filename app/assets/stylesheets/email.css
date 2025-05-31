@@ -2,6 +2,16 @@ body {
   background-color: #f2f2f2
 }
 
+a {
+  color: #00B963;
+  text-decoration: none
+}
+
+a:hover {
+  color: #00A558;
+  text-decoration: underline
+}
+
 table {
   width: 100%;
   border-collapse: collapse
@@ -26,9 +36,11 @@ td {
   overflow: hidden;
 }
 
-.container {
-  max-width: 650px;
-  margin: 0 auto;
+@media(min-width: 768px) {
+  .container {
+    max-width: 650px;
+    margin: 0 auto;
+  }
 }
 
 .main {
@@ -72,16 +84,6 @@ h6,
 .h {
   font-family: 'Roboto', sans-serif;
   margin-top: 0;
-}
-
-a {
-  color: #00B963;
-  text-decoration: none
-}
-
-a:hover {
-  color: #2BA457;
-  text-decoration: underline
 }
 
 img {
@@ -150,7 +152,7 @@ p.action a {
 }
 
 p.action a:hover {
-  background: #2BA457 !important;
+  background: #00A558 !important;
 }
 
 hr {
@@ -162,6 +164,7 @@ a.attachment {
   background: white;
   padding: 16px;
   margin: 0 16px;
+  margin-top: 16px;
   border: 1px solid #eaeaea;
   border-radius: 4px;
   text-decoration: none;

@@ -2,16 +2,14 @@ Dandelion::App.controller do
   post '/g/:slug/stripe_webhook' do
     @gathering = Gathering.find_by(slug: params[:slug]) || not_found
     payload = request.body.read
-    event = nil
     sig_header = request.env['HTTP_STRIPE_SIGNATURE']
     begin
       event = Stripe::Webhook.construct_event(
         payload, sig_header, @gathering.stripe_endpoint_secret
       )
-    rescue JSON::ParserError
-      halt 400
-    rescue Stripe::SignatureVerificationError
-      halt 400
+    rescue Stripe::SignatureVerificationError => e
+      airbrake_notify(e)
+      halt 200
     end
 
     if event['type'] == 'checkout.session.completed'
@@ -70,7 +68,11 @@ Dandelion::App.controller do
         }],
         customer_email: current_account.email,
         success_url: "#{ENV['BASE_URI']}/g/#{@gathering.slug}",
-        cancel_url: "#{ENV['BASE_URI']}/g/#{@gathering.slug}"
+        cancel_url: "#{ENV['BASE_URI']}/g/#{@gathering.slug}",
+        metadata: {
+          de_gathering_id: @gathering.id,
+          de_account_id: @membership.account.id
+        }
       }
       session = Stripe::Checkout::Session.create(stripe_session_hash)
       @membership.payment_attempts.create! amount: params[:amount].to_i, currency: @gathering.currency, session_id: session.id, payment_intent: session.payment_intent
@@ -93,19 +95,9 @@ Dandelion::App.controller do
       @membership.payment_attempts.create! amount: params[:amount].to_i, currency: @gathering.currency, coinbase_checkout_id: checkout.id
       { checkout_id: checkout.id }.to_json
 
-    when 'seeds'
-
-      seeds_secret = Array.new(6) { [*'1'..'9'].sample }.join
-      payment_attempt = @membership.payment_attempts.create!(
-        amount: params[:amount].to_i,
-        currency: @gathering.currency,
-        seeds_secret: seeds_secret
-      )
-      { seeds_secret: payment_attempt.seeds_secret, seeds_amount: payment_attempt.seeds_amount, payment_attempt_id: payment_attempt.id.to_s, payment_attempt_expiry: (payment_attempt.created_at + 1.hour).to_datetime.strftime('%Q') }.to_json
-
     when 'evm'
 
-      evm_secret = Array.new(6) { [*'1'..'9'].sample }.join
+      evm_secret = Array.new(4) { [*'1'..'9'].sample }.join
       payment_attempt = @membership.payment_attempts.create!(
         amount: params[:amount].to_i,
         currency: @gathering.currency,
@@ -121,7 +113,6 @@ Dandelion::App.controller do
     @membership = @gathering.memberships.find_by(account: current_account)
     membership_required!
     @payment_attempt = @gathering.payment_attempts.find(params[:payment_attempt_id])
-    @gathering.check_seeds_account if @payment_attempt.seeds_secret && @gathering.seeds_username
     @gathering.check_evm_account if @payment_attempt.evm_secret && @gathering.evm_address
     { id: @payment_attempt.id.to_s, payment_completed: @gathering.payments.find_by(payment_attempt: @payment_attempt) ? true : false }.to_json
   end

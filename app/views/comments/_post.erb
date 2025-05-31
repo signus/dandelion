@@ -1,5 +1,5 @@
 <% comment = post.comments.order('created_at asc').first %>
-<% if comment.commentable.is_a?(Gathering) or comment.commentable.respond_to?(:gathering) %>
+<% if comment.commentable.respond_to?(:gathering) %>
   <% comment.read_receipts.create account: current_account %>
 <% end %>
 <div class="card mb-5" id="post-<%= post.id %>">
@@ -14,13 +14,13 @@
       <div class="media-body comment" data-comment-id="<%= comment.id %>">
         <span class="float-right">
           <% if (subscription = comment.post.subscriptions.find_by(account: current_account)) %>
-            <a title="Email notifications on; click to turn off" class="pagelet-trigger mr-1" href="/subscriptions/<%= subscription.id %>/unsubscribe"><i class="fa fa-eye"></i></a>
+            <a title="Email notifications on; click to turn off" class="pagelet-trigger mr-1" href="/subscriptions/<%= subscription.id %>/unsubscribe"><i class="bi bi-eye"></i></a>
           <% else %>
-            <a style="opacity: 0.3" title="Email notifications off; click to turn on" class="pagelet-trigger mr-1" href="/subscriptions/create?post_id=<%= comment.post_id %>"><i class="fa fa-eye-slash"></i></a>
+            <a style="opacity: 0.3" title="Email notifications off; click to turn on" class="pagelet-trigger mr-1" href="/subscriptions/create?post_id=<%= comment.post_id %>"><i class="bi bi-eye-slash"></i></a>
           <% end %>
           <% if comment_admin?(comment) %>
             <% if !comment.sent_at %>
-              <a title="Send comment" href="/comments/<%= comment.id %>/send"><i class="fa fa-envelope"></i></a>
+              <a title="Send comment" href="/comments/<%= comment.id %>/send"><i class="bi bi-envelope-fill"></i></a>
             <% end %>
           <% end %>
         </span>
@@ -37,16 +37,20 @@
         </div>
         <div class="mb-2">
           <div class="row justify-content-between align-items-center">
-            <div data-pagelet-url="/comments/<%= comment.id %>/reactions" class="col-auto"></div>
-            <% if comment.commentable.is_a?(Gathering) or comment.commentable.respond_to?(:gathering) %>
-              <div data-pagelet-url="/comments/<%= comment.id %>/read_receipts" class="col-auto"></div>
+            <div data-pagelet-url="/comments/<%= comment.id %>/reactions" class="col-auto">
+              <%= partial :'comments/comment_reactions', locals: { comment: comment } %>
+            </div>
+            <% if comment.commentable.respond_to?(:gathering) %>
+              <div data-pagelet-url="/comments/<%= comment.id %>/read_receipts" class="col-auto">
+                <%= partial :'comments/read_receipts', locals: { comment: comment } %>
+              </div>
             <% end %>
           </div>
         </div>
       </div>
     </div>
     <div style="background: #e9ecef">
-      <div data-pagelet-url="/posts/<%= post.id %>/replies" data-pusher-channel="post.<%= post.id %>">
+      <div data-pagelet-url="/posts/<%= post.id %>/post_replies">
         <%= partial :'comments/replies', locals: { post: post } %>
       </div>
       <div class="media" style="padding: 10px 10px 0 10px; margin: 0">

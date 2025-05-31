@@ -5,7 +5,7 @@ Dandelion::App.controller do
       @gatherings = if current_account && params[:my_gatherings]
                       Gathering.and(:id.in => current_account.memberships.pluck(:gathering_id))
                     else
-                      Gathering.and(listed: true).and(:privacy.ne => 'secret')
+                      Gathering.and(:listed => true, :privacy.ne => 'secret', :image_uid.ne => nil)
                     end
       @gatherings = params[:order] == 'membership_count' ? @gatherings.order('membership_count desc') : @gatherings.order('created_at desc')
       if params[:q]
@@ -56,11 +56,10 @@ Dandelion::App.controller do
   %sign_in_details%
 </p>)
     Gathering.enablable.each do |x|
-      @gathering.send("enable_#{x}=", true)
+      @gathering.send("enable_#{x}=", true) unless x == 'shift_worth'
     end
     @gathering.listed = true
     @gathering.enable_partial_payments = true
-    @gathering.enable_comments_on_gathering_homepage = false
     erb :'gatherings/build'
   end
 

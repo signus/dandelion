@@ -1,5 +1,16 @@
+<style>
+  body, #content { background-color: #F9F8FA; }
+  .btn-outline-primary {
+    background: white;
+  }
+  .btn.btn-outline-primary.dropdown-toggle {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important
+  }
+</style>
+
 <% if event_admin? %>
   <%= partial :'events/nav', locals: { event: @event } %>
+  <%= partial :'events/locked' %>
   <div data-pagelet-url="/events/<%= @event.id %>/notes" class="mb-3">
     <%= partial :'events/notes' %>
   </div>
@@ -10,7 +21,7 @@
   </style>
 <% end %>
 
-<% if params[:tour] || (Padrino.env == :production && params[:created] && current_account && current_account.events.count == 1) %>
+<% if params[:tour] || (!ENV['SKIP_TOURS'] && params[:created] && current_account && current_account.events.count == 1) %>
   <script>
     $(function() {
 
@@ -35,7 +46,7 @@
   <div class="col-lg-10">
     <% if @event_video %>
       <div class="embed-responsive embed-responsive-16by9 mb-3">
-        <video src="<%=@event_video.url%>" type="video/mp4" controls></video>
+        <video src="<%=@event_video.url%>" type="video/mp4" controls muted playsinline onmouseover="this.play();" onmouseout="this.pause();"></video>
       </div>
     <% elsif @event_image %>
       <a href="/e/<%=@event.slug%><% if params[:cohost] %>?cohost=<%=params[:cohost]%><% end %>"><img id="event-image" class="w-100 mb-3" src="<%= u @event_image.thumb('1920x1920').url %>"></a>
@@ -45,13 +56,14 @@
     <% end %>
   </div>
 </div>
+
 <% unless @order %>
   <% sidebar = false %>
   <% sidebar = true if @event.sold_out? || @event.purchase_url %>
   <% buy_tickets_style = 'class="fixed-bottom bg-white p-3 w-100 d-block d-md-none" style="z-index: 1019; box-shadow: 0px -2px 4px 0px rgba(0,0,0,0.3);"' %>
   <% if @event.purchase_url %>
     <div id="buy-tickets" <%== buy_tickets_style %>>
-      <a target="_blank" href="<%=@event.purchase_url%>" class="btn btn-primary btn-block">Book via <%=URI(@event.purchase_url).host.gsub('www.','')%></a>
+      <a target="_blank" href="<%=@event.purchase_url%>" class="btn btn-primary btn-block"><%= @event.rsvp_button_text || "Book via #{URI(@event.purchase_url).host.gsub('www.','')}" %></a>
     </div>
     <style>
       @media(max-width: 991px) { #content { padding-bottom: 4rem } }
@@ -79,7 +91,7 @@
   <div class="row">
     <div class="<%= sidebar ? 'col-lg-7' : 'col-lg-12' %>">
 
-      <% n = 1 
+      <% n = 1; events = [];
       if @event.organisation
         events = ([@event] + @event.organisation.events_for_search.future.and(:name => @event.name, :location => @event.location, :start_time.ne => @event.start_time)).uniq
         n = events.count
@@ -96,52 +108,23 @@
           </div>
         </small>
       </h1>
-      <ul style="margin-left: 1.66em; font-size: 1rem" class="fa-ul text-dark mb-1">
-        <li>
-          <i <% if n > 1 %> style="top: 0.55em"<% end %> data-toggle="tooltip" title="Dates/times" class="fa fa-li fa-calendar"></i>
-          <% if n > 1 %>
-            <%= select_tag :event_id, options: events.map { |event| [@event.event_sessions.count > 0 ? concise_when_details(event, with_zone: true) : when_details(event), event.id] }, selected: @event.id, class: 'form-control mb-1', style: 'font-size: 1rem; padding: 0.375rem;', onchange: "window.location = '/events/'+$(this).val()" %>
-          <% elsif @event.event_sessions.count > 0 %>
-            <%= concise_when_details(@event, with_zone: true) %>
-            <span style="font-size: 0.85em">
-              <span class="label label-primary"><%= pluralize @event.event_sessions.count, 'session' %></span>
-            </span>
-          <% else %>
-            <%= when_details(@event) %>
-          <% end %>
-          <% if @event.start_time.to_date != @event.end_time.to_date %>
-            <div style="font-size: 0.85em" class="my-1">
-              <%= partial :'events/add_event_session', locals: {
-          event_sessions: @event.event_sessions.order('start_time asc'),
-          add_and_remove: event_admin?,
-          new_object: EventSession.new,
-          new_url: "/events/#{@event.id}/event_sessions/new",
-          destroy_url: "/events/#{@event.id}/event_sessions/destroy"
-        } %>
-            </div>
-          <% end %>
-        </li>
-        <li><i data-toggle="tooltip" title="Location" class="fa fa-li fa-map-marker"></i>
-          <% if @event.location == 'Online' %>
-            Online
-          <% elsif @event.location =~ URI::regexp %>
-            <span class="compact-urls"><a href="<%= @event.location %>"><%= @event.location %></a></span>
-          <% else %>
-            <a target="_blank" href="https://www.google.co.uk/maps?q=<%= @event.location %>"><%= @event.location %></a>
-          <% end %>
-        </li>
-        <% if @event.slug %>
-          <li>
-            <i data-toggle="tooltip" title="Event URL" class="fa fa-li fa-link"></i>
-            <a data-toggle="tooltip" href="<%=ENV['BASE_URI']%>/e/<%=@event.slug%>"><%=ENV['BASE_URI']%>/e/<%=@event.slug%></a>
-          </li>
-        <% end %>
-      </ul>
-      <div>
-        <%= partial :'events/tag_labels', locals: { event: @event } %>
+
+      <%= partial :'events/details', locals: { n: n, events: events } %>
+
+      <div style="font-size: 1.1em" class="mb-3">
+        <%= partial :'events/tag_labels', locals: { event: @event, show_more: true, show_more_limit: 5 } %>
       </div>
+
       <%= partial :'events/info_table' %>
+
       <% if @event.description || @event.organisation.event_footer %>
+        <% if @event.half_width_images %>
+          <style>
+            @media (min-width: 768px) {
+              div.wysiwyg img { width: 50% }
+            }
+          </style>
+        <% end %>
         <div class="wysiwyg">
           <big>
             <% if @event.description %>
@@ -150,8 +133,8 @@
                 .gsub(%r{<a (href=".+?")>\[\[(.+?)\]\]</a>}, '<a \1 class="btn btn-primary">\2</a>')) %>
               <% if @event.raw_description %>
                 <%== d %>
-              <% else %>
-                <%== Sanitize.fragment(d, Sanitize::Config::DANDELION) %>
+              <% else # previously only if @event.organisation.allow_iframes? (otherwise Sanitize.fragment(d, Sanitize::Config::DANDELION)) %>
+                <%== Sanitize.fragment(d, Sanitize::Config::IFRAMES) %>
               <% end %>
             <% end %>
             <% if !@event.hide_organisation_footer && @event.organisation.event_footer && !@event.zoom_party? %>
@@ -160,11 +143,7 @@
           </big>
         </div>
       <% end %>
-      <% unless @event.hide_attendees? %>
-        <div data-pagelet-url="/events/<%= @event.id %>/attendees">
-          <%= partial :'events/attendees' %>
-        </div>
-      <% end %>
+
       <% if @event.zoom_party? %>
         <% if current_account %>
           <div data-pagelet-url="/zoom_parties?event_id=<%= @event.id %>"></div>
@@ -174,11 +153,19 @@
           </p>
         <% end %>
       <% end %>
+
     </div>
     <% if sidebar %>
       <%= partial :'events/sidebar' %>
     <% end %>
   </div>
+
   <%= partial :'events/feedback' %>
-  <%= partial :'events/discussion' %>
+
+  <% if !@event.hide_discussion %>
+    <% if event_participant? %>
+      <%= partial :'events/discussion' %>
+    <% end %>
+  <% end %>
+
 <% end %>

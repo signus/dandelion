@@ -1,14 +1,14 @@
 <% if !current_account %>
   <h1>Organisations</h1>
 <% end %>
-<a class="btn btn-primary mt-1 mt-lg-0 mb-3" href="/o/new"><i class="fa fa-plus-circle"></i> Create an organisation</a>
+<a class="btn btn-primary mt-1 mt-lg-0 mb-3" href="/o/new"><i class="bi bi-plus-lg"></i> Create an organisation</a>
 
 <% form_tag '/organisations', method: 'get', class: 'submitOnChange searchForm form-inline mb-3' do %>
   <%= hidden_field_tag :display, value: params[:display] %>
   <%= hidden_field_tag :order, value: params[:order] %>
   <div class="form-group">
     <label>Search</label>
-    <%= text_field_tag :q, class: 'form-control', value: params[:q], style: 'max-width: 12em' %>
+    <%= text_field_tag :q, class: 'form-control', value: params[:q] %>
   </div>
   <% if current_account %>
     <%= checkbox 'Following' %>
@@ -28,17 +28,17 @@
       </li>
       <li class="list-inline-item">
         <a class="btn <%='btn btn-outline-primary' if !params[:display] || params[:display] == 'blocks' %>" href="<%= path if defined?(path) %>?<%= q = Rack::Utils.parse_nested_query(request.query_string); q.delete('search'); q.delete('display'); q.merge({search: 1, display: 'blocks' }).to_query %>">
-          <i class="fa fa-th-large"></i> Blocks
+          <i class="bi bi-grid-fill"></i> Blocks
         </a>
       </li>
       <li class="list-inline-item">
         <a class="btn <%='btn btn-outline-primary' if params[:display] == 'network' %>" href="<%= path if defined?(path) %>?<%= q = Rack::Utils.parse_nested_query(request.query_string); q.delete('search'); q.delete('display'); q.merge({search: 1, display: 'network' }).to_query %>">
-          <i class="fa fa-share-alt"></i> Network
+          <i class="bi bi-share"></i> Network
         </a>
       </li>
       <li class="list-inline-item">
         <a class="btn <%='btn-outline-primary' if params[:display] == 'map' %>" href="<%= path if defined?(path) %>?<%= q = Rack::Utils.parse_nested_query(request.query_string); q.delete('search'); q.delete('display'); q.merge({search: 1, display: 'map' }).to_query %>">
-          <i class="fa fa-map-marker"></i> Map
+          <i class="bi bi-geo-alt-fill"></i> Map
         </a>
       </li>
     </ul>
@@ -46,7 +46,7 @@
 
   <% if !params[:display] || params[:display] == 'blocks' %>
     <div class="col-12 col-lg-auto">
-      <% form_tag (defined?(path) ? path : ''), method: 'get', class: 'form-inline submitOnChange' do %>
+      <% form_tag (defined?(path) && path ? path : ''), method: 'get', class: 'form-inline submitOnChange' do %>
         <% params.each { |k,v| next if %w[format search order slug].include?(k) %>
         <%= hidden_field_tag k, value: v %>
         <% } %>
@@ -64,109 +64,7 @@
     <%= partial :'maps/map', locals: { stem: "/organisations", dynamic: true, trigger_bounds_changed: true } %>
   </div>
 <% elsif params[:display] == 'network' %>
-
-  <% {
-     'cytoscape/3.9.4' => 'cytoscape.min.js',
-     'chroma-js/2.0.6' => 'chroma.min.js'
-   }.each { |k,v| %>
-  <% v.split(' ').each { |f| u = "https://cdnjs.cloudflare.com/ajax/libs/#{k}/#{f}" %>
-  <script src="<%= u %>"></script>
-  <% } %>
-  <% } %>
-
-  <% [
-     '//rawcdn.githack.com/tgdwyer/WebCola/aab7e61cd9580c4c89180cc0a30594e12743a242/WebCola/cola.min.js',
-     '//rawcdn.githack.com/cytoscape/cytoscape.js-cola/8c78f9d5c11ff6162b7d902f0639e1f787277b9f/cytoscape-cola.js'
-   ].each { |f| %>
-  <script src="<%= f %>"></script>
-  <% } %>
-
-  <script>
-    function drawNetwork() {
-
-    scale = chroma.scale(['#00B963', '#00B963']);
-
-    node_min_width = 0
-    node_min_color = 0
-    node_color_scale = 1
-    edge_min_color = 0
-    edge_color_scale = 1
-    edge_min_opacity = 0.25
-    edge_opacity_scale = 100
-
-            cy = cytoscape({
-
-            container: $('#cy'),
-                    elements: [
-    <% organisation_edges = OrganisationEdge.and(:mutual_followers.gte => Padrino.env == :development ? 1 : 10) %>
-    <% Organisation.and(:id.in => organisation_edges.pluck(:source_id) + organisation_edges.pluck(:sink_id)).each { |organisation| %>
-                      {
-                        data: {
-                          id: '<%= organisation.id %>',
-                          slug: '<%= organisation.slug %>',
-                          name: <%== CGI.unescapeHTML(Sanitize.fragment(organisation.name)).to_json %>,
-                          weight: <%= w = 50 %>,
-                          width: (node_min_width + <%= w %>),
-                          color: scale(node_min_color + <%= w %>/node_color_scale).hex()
-                        }
-                      },
-                      <% organisation_edges.and(:source => organisation).each { |edge| %>
-                      {
-                        data: {
-                          id: '<%= edge.id %>',
-                          source: '<%= edge.source.id %>',
-                          target: '<%= edge.sink.id %>',
-                          weight: <%= w = edge.mutual_followers %>,
-                          color: scale(edge_min_color + <%= w %>/edge_color_scale).hex(),
-                          opacity: (edge_min_opacity + <%= w %>/edge_opacity_scale)
-                        }
-                      },
-                      <% } %>
-    <% } %>
-                    ],
-                    style: [
-                    {
-                    selector: 'node',
-                    style: {
-                        'color': '#212529',
-                        'background-color': 'data(color)',
-                        'opacity': 0.85,
-                        'label': 'data(name)',
-                        'width': 'data(width)',
-                        'height': 'data(width)'
-                      }
-                    },
-                    {
-                    selector: 'edge',
-                    style: {
-                        'opacity': 'data(opacity)',
-                        'line-color': 'data(color)',
-                      }
-                    }
-                    ],
-                    layout: {
-                      name: 'cola',
-                      //randomize: true,
-                      //infinite: true,
-                      nodeSpacing: function(node){ return 40; },
-                    }
-
-            });
-    //cy.$('[weight < 2]').hide()
-    cy.minZoom(0.5)
-    cy.on('tap', 'node', function(){
-     window.location.href = '/o/' + this.data('slug');
-    });
-    }
-
-    $(function() {
-    drawNetwork()
-            $(window).one('focus', function() { drawNetwork() })
-    })
-  </script>
-  <div id="cy" style="height: 600px"></div>
-
-
+  <%= partial :'organisations/network', locals: { organisations: @organisations } %>
 <% else %>
   <%= partial :'organisations/blocks', locals: { organisations: @organisations } %>
   <%= will_paginate @organisations, param_name: 'organisations_page', inner_window: 0, outer_window: 0, renderer: WillPaginate::ViewHelpers::BootstrapRenderer %>

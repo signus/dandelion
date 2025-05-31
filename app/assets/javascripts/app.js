@@ -2,21 +2,46 @@ function nl2br (str) {
   return str.replace(/(?:\r\n|\r|\n)/g, '<br>')
 }
 
+function getCurrencySymbol (currency) {
+  try {
+    const parts = new Intl.NumberFormat('en', { style: 'currency', currency: currency })
+      .formatToParts();
+    const symbol = parts.find(part => part.type === 'currency');
+    const symbolValue = symbol ? symbol.value : currency;
+
+    // If symbol is compound (>1 char) and ends with $, return original currency code
+    return (symbolValue.length > 1 && symbolValue.endsWith('$')) ? currency : symbolValue;
+  } catch (e) {
+    return currency;
+  }
+}
+
 $.fn.serializeObject = function () {
-  const o = {}
-  const a = this.serializeArray()
+  const o = {};
+  const a = this.serializeArray();
+
+  // Handle regular form fields
   $.each(a, function () {
     if (o[this.name]) {
       if (!o[this.name].push) {
-        o[this.name] = [o[this.name]]
+        o[this.name] = [o[this.name]];
       }
-      o[this.name].push(this.value || '')
+      o[this.name].push(this.value || '');
     } else {
-      o[this.name] = this.value || ''
+      o[this.name] = this.value || '';
     }
-  })
-  return o
-}
+  });
+
+  // Handle CKEditor 5 fields
+  this.find('.ck[contenteditable]').each(function () {
+    const editorInstance = this.ckeditorInstance;
+    const fieldName = editorInstance.sourceElement.getAttribute('name');
+    const data = editorInstance.getData();
+    o[fieldName] = data;
+  });
+
+  return o;
+};
 
 $(function () {
   function ajaxCompleted () {
@@ -85,7 +110,7 @@ $(function () {
       }
     })
 
-    $('.block').not('[data-block-hover]').attr('data-block-hover', true).hover(
+    $('.block').not('[data-block-hover], .infowindow .block').attr('data-block-hover', true).hover(
       function () {
         $('.block-edit', this).show()
       },
@@ -126,10 +151,12 @@ $(function () {
       autosize(this)
     })
 
-    $('oembed[url]').not('[data-embedded]').attr('data-embedded', true).each(function () {
-      iframely.load(this, $(this).attr('url'))
-      if ($(this).parent().is('figure.media')) { $(this).parent().removeClass('media') }
-    })
+    if (typeof iframely !== 'undefined') {
+      $('oembed[url]').not('[data-embedded]').attr('data-embedded', true).each(function () {
+        iframely.load(this, $(this).attr('url'))
+        if ($(this).parent().is('figure.media')) { $(this).parent().removeClass('media') }
+      })
+    }
 
     $('.links-blank').not('[data-links-blank-done]').attr('data-links-blank-done', true).each(function () {
       $('a[href^=http]', this).attr('target', '_blank')
@@ -159,7 +186,7 @@ $(function () {
     })
   })
 
-  $('input[type=text].slug').each(function () {
+  $('input[type=text].slug, div.slugify input[type=text].shorturl').each(function () {
     const slug = $(this)
     const start_length = slug.val().length
     const pos = $.inArray(this, $('input', this.form)) - 1
@@ -239,8 +266,10 @@ $(function () {
     })
   })
 
+  $('input.typeWatch').typeWatch({ wait: 500, callback: function () { $(this.form).submit() } })
+
   $('form.submitOnChange').each(function () {
-    $('select, .flatpickr-input, input[type=checkbox]', this).change(function () {
+    $('select, .flatpickr-input, input[type=checkbox], input[type=month]', this).change(function () {
       $(this.form).submit()
     })
   })
@@ -253,11 +282,9 @@ $(function () {
       if ($('input[type=checkbox]:checked', div).length > 0) { $('span', button).removeClass('label-outline-primary').addClass('label-primary') }
       $(button).click(function () {
         if ($('input[type=checkbox]:checked', div).length > 0) {
-          console.log('unchecking')
           $('input[type=checkbox]', div).prop('checked', false)
           $('span', button).removeClass('label-primary').addClass('label-outline-primary')
         } else {
-          console.log('checking')
           $('input[type=checkbox]', div).prop('checked', true)
           $('span', button).removeClass('label-outline-primary').addClass('label-primary')
         }
@@ -265,13 +292,24 @@ $(function () {
     })
   })
 
+  $('.search.well .checkbox-inline input[type="checkbox"]').on('change', function () {
+    $(this).closest('.checkbox-inline').toggleClass('checked', this.checked);
+  });
+
   $(window).on('beforeunload', function () {
     if ($('#page-container').hasClass('page-sidebar-toggled') && $(window).width() < 768) {
-      $('.pace-activity').css('border-top-color', 'white').css('border-left-color', 'white')
+      $('#page-container').removeClass('page-sidebar-toggled');
+      $('[data-click="sidebar-toggled"]').removeClass('active');
     }
-    $('.pace-progress').hide()
-    $('.pace-inactive').show()
+    $('.pace-inactive').show() // start spinner as user starts navigating away from page
   })
 
-  Pace.stop()
+  $(window).on('pagehide', function () {
+    $('.pace-progress').hide()
+    $('.pace-inactive').hide() // hide spinner as user leaves page so it doesn't show when pressing back button    
+  })
+
+  if (typeof Pace !== 'undefined') {
+    Pace.stop()
+  }
 })

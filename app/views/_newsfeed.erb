@@ -5,7 +5,7 @@
     <% notifications.each_with_index { |notification,i| %>
     <li>
       <div class="media">
-        <span style="border-radius: 6px; height: 18px; width: 18px; font-size: 12px" class="text-center bg-dark text-white"><i class="fa <%= notification.icon %>"></i></span>
+        <span class="newsfeed-icon text-center"><i class="bi <%= notification.icon %>"></i></span>
         <div class="media-body ml-2">
           <p class="my-0 mb-1">
             <a class="text-dark" href="<%= notification.link[1] %>">
@@ -26,7 +26,9 @@
               <%= partial :'accounts/square', locals: { account: notification.notifiable.account, style: 'display: block; width: 32px' } %>
               <div class="media-body ml-2">
                 <%= partial :'comments/body', locals: { comment: comment } %>
-                <div data-pagelet-url="/comments/<%= comment.id %>/reactions" class="mt-3"></div>
+                <div data-pagelet-url="/comments/<%= comment.id %>/reactions" class="mt-3">
+                  <%= partial :'comments/comment_reactions', locals: { comment: comment } %>
+                </div>
               </div>
             </div>
           <% end %>
@@ -39,7 +41,7 @@
   <%= will_paginate notifications, inner_window: 0, outer_window: 0, renderer: WillPaginate::ViewHelpers::BootstrapRenderer %>
 <% end %>
 
-<% if params[:tour] || (Padrino.env == :production && request.path == '/' && !current_account.seen_intro_tour) %>
+<% if params[:tour] || (!ENV['SKIP_TOURS'] && request.path == '/' && !current_account.seen_intro_tour) %>
   <%= partial :intro_tour %>
   <% current_account.update_attribute(:seen_intro_tour, true) %>
 <% end %>

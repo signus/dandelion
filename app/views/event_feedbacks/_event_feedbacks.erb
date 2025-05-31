@@ -1,7 +1,38 @@
 <%= partial :'event_feedbacks/average_rating', locals: { event_feedbacks: event_feedbacks } %>
+
+<% if !params[:minimal] %>
+
+  <% if @account %>
+    <% if @account.feedback_summary %>
+      <div class="ai-well my-3" data-toggle="tooltip" title="AI-generated summary ✨">
+        <big>
+          <%= @account.feedback_summary %>
+        </big>
+      </div>
+    <% end %>
+    <% if admin? %>
+      <a href="/accounts/<%= @account.id %>/feedback_summary">Refresh feedback summary</a>
+    <% end %>
+  <% end %>
+
+  <% if @activity %>
+    <% if @activity.feedback_summary %>
+      <div class="ai-well my-3" data-toggle="tooltip" title="AI-generated summary ✨">
+        <big>
+          <%= @activity.feedback_summary %>
+        </big>
+      </div>
+    <% end %>
+    <% if admin? %>
+      <a href="/activities/<%= @activity.id %>/feedback_summary">Refresh feedback summary</a>
+    <% end %>
+  <% end %>
+
+<% end %>
+
 <% unless defined?(unscoped); event_feedbacks = event_feedbacks.unscoped; end %>
   <% event_feedbacks = event_feedbacks.and(:rating.ne => nil).order('created_at desc').paginate(page: params[:page], per_page: 10) %>
-  <table class="table table-condensed mt-3">
+  <table class="table table-borderless mt-3">
     <% event_feedbacks.each { |event_feedback| account = event_feedback.account %>
     <tr <% if event_feedback.deleted_at%>style="opacity: 0.5"<% end %>>
       <td class="feedback-name">
@@ -9,8 +40,9 @@
           Anonymous
         <% else %>
           <% if account.public? %>
-            <% if account.picture && !params[:hide_pictures] %>
+            <% if account.image && !params[:hide_pictures] %>
               <%= partial :'accounts/square', locals: { account: account, width: '50px' } %>
+              <br class="d-lg-none" />
             <% end %>
             <a <% if params[:minimal] %>target="_blank"<% end %> href="/u/<%= account.username %>"><%= account.name %></a>
           <% else %>
@@ -21,7 +53,7 @@
           on <a <% if params[:minimal] %>target="_blank"<% end %>  href="/events/<%= event_feedback.event.id %>"><%= event_feedback.event.name %></a>
         <% end %>
       </td>
-      <td style="white-space: nowrap;"><% if event_feedback.deleted_at%><em>Removed</em><% else %><% event_feedback.rating.times do %><i class="fa fa-star"></i><% end %><% end %></td>
+      <td style="white-space: nowrap;"><% if event_feedback.deleted_at%><em>Removed</em><% else %><% event_feedback.rating.times do %><i class="bi bi-star-fill"></i><% end %><% end %></td>
       <td><small><%= timeago event_feedback.created_at %></small></td>
     </tr>
     <% if !event_feedback.deleted_at && (event_feedback.public_answers || event_feedback.response) %>

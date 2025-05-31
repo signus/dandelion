@@ -7,25 +7,17 @@ Dandelion::App.controller do
 
   post '/organisations/stripe_webhook' do
     payload = request.body.read
-    event = nil
     sig_header = request.env['HTTP_STRIPE_SIGNATURE']
-    begin
-      event = Stripe::Webhook.construct_event(
-        payload, sig_header, ENV['STRIPE_ENDPOINT_SECRET_ORGANISATIONS']
-      )
-    rescue JSON::ParserError
-      halt 400
-    rescue Stripe::SignatureVerificationError
-      halt 200
-    end
+    event = Stripe::Webhook.construct_event(
+      payload, sig_header, ENV['STRIPE_ENDPOINT_SECRET_ORGANISATIONS']
+    )
 
     if event['type'] == 'checkout.session.completed'
       session = event['data']['object']
       if (organisation_contribution = OrganisationContribution.find_by(session_id: session.id))
-        organisation_contribution.set(payment_completed: true)
+        organisation_contribution.payment_completed = true
+        organisation_contribution.save
         organisation_contribution.send_notification
-        organisation_contribution.organisation.update_paid_up
-        Fragment.and(key: %r{/accounts/pay_progress}).destroy_all
       end
     end
     halt 200
@@ -46,15 +38,63 @@ Dandelion::App.controller do
     end
 
     if event.type == 'charge:confirmed' && event.data.respond_to?(:checkout) && (organisation_contribution = OrganisationContribution.find_by(coinbase_checkout_id: event.data.checkout.id))
-      organisation_contribution.set(payment_completed: true)
-      organisation_contribution.organisation.update_paid_up
-      Fragment.and(key: %r{/accounts/pay_progress}).destroy_all
+      organisation_contribution.payment_completed = true
+      organisation_contribution.save
+      organisation_contribution.send_notification
     end
     halt 200
   end
 
+  post '/organisations/:id/stripe_setup', provides: :json do
+    @organisation = Organisation.find(params[:id])
+
+    Stripe.api_key = ENV['STRIPE_SK']
+    Stripe.api_version = '2020-08-27'
+
+    session = Stripe::Checkout::Session.create({
+                                                 mode: 'setup',
+                                                 currency: @organisation.currency,
+                                                 customer_creation: 'always',
+                                                 success_url: "#{ENV['BASE_URI']}/organisations/#{@organisation.id}/stripe_setup_complete?session_id={CHECKOUT_SESSION_ID}",
+                                                 cancel_url: "#{ENV['BASE_URI']}/events/new?organisation_id=#{@organisation.id}"
+                                               })
+
+    { session_id: session.id }.to_json
+  end
+
+  get '/organisations/:id/stripe_setup_complete' do
+    @organisation = Organisation.find(params[:id])
+
+    Stripe.api_key = ENV['STRIPE_SK']
+    Stripe.api_version = '2020-08-27'
+
+    session = Stripe::Checkout::Session.retrieve(params[:session_id])
+    setup_intent = Stripe::SetupIntent.retrieve(session.setup_intent)
+    payment_method = Stripe::PaymentMethod.retrieve(setup_intent.payment_method)
+
+    if payment_method.respond_to?(:card)
+      @organisation.set(stripe_customer_id: session.customer)
+      @organisation.set(card_last4: payment_method.card.last4)
+      @organisation.stripe_topup
+      @organisation.update_paid_up_without_delay
+    end
+
+    redirect "/o/#{@organisation.slug}/contribute"
+  end
+
+  get '/organisations/:id/clear_stripe_customer_id' do
+    @organisation = Organisation.find(params[:id])
+
+    Stripe.api_key = ENV['STRIPE_SK']
+    Stripe.api_version = '2020-08-27'
+
+    @organisation.set(stripe_customer_id: nil)
+    redirect "/o/#{@organisation.slug}/contribute"
+  end
+
   post '/organisations/:id/pay', provides: :json do
     @organisation = Organisation.find(params[:id])
+    halt 400 unless params[:amount] && params[:amount].to_f > 0
 
     case params[:payment_method]
     when 'stripe'

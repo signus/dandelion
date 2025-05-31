@@ -54,17 +54,22 @@
     <p style="margin-top: -0.75rem"><a href="/confirm_email">Resend confirmation email</a></p>
   <% end %>
   <%= f.password_block :password %>
+  <div class="my-3">
+    <%= f.check_box_block :hidden %>
+  </div>
   <script>
     $(function () {
-      var autocomplete = new google.maps.places.Autocomplete($('#account_location')[0]);
-      $('#account_location').keydown(function (e) {
-        $('#account-map').hide()
-        if (e.which == 13 && $('.pac-container:visible').length)
-          return false;
-      });
+      if (typeof google !== 'undefined') {
+        var autocomplete = new google.maps.places.Autocomplete($('#account_location')[0]);
+        $('#account_location').keydown(function (e) {
+          $('#account-map').hide()
+          if (e.which == 13 && $('.pac-container:visible').length)
+            return false;
+        });
+      }
     })
   </script>
-  <%= f.image_block :picture, rotate: false %>
+  <%= f.image_block :image, rotate: false %>
   <%= f.text_block :location %>
   <% if @account.time_zone %>
     <p>
@@ -88,9 +93,6 @@
   <%= f.select_block :gender %>
   <%= f.wysiwyg_block :bio %>
   <%= f.select_block :default_currency %>
-  <div class="my-3">
-    <%= f.check_box_block :hidden %>
-  </div>
 
   <% if @account.memberships.count > 0 %>
     <script>

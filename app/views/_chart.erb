@@ -15,58 +15,71 @@
       <%
         if !defined?(data)
           if !defined?(months_ago); months_ago = 12; end
-        earliest = countable.min(:created_at).to_date
-        d = [Date.new(earliest.year, earliest.month, 1) - 1.month]
-        if earliest < months_ago.months.ago
-          earliest = months_ago.months.ago
-          d = [Date.new(earliest.year, earliest.month, 1)]
+          earliest = countable.min(:created_at).to_date
+          d = [Date.new(earliest.year, earliest.month, 1) - 1.month]
+          if earliest < months_ago.months.ago
+            earliest = months_ago.months.ago
+            d = [Date.new(earliest.year, earliest.month, 1)]
+          end
+          d << (d.last + 1.month) while d.last < Date.new(Date.today.year, Date.today.month, 1)
+          data = d.map do |x|
+            ["#{Date::MONTHNAMES[x.month]} #{x.year}", countable.and(:created_at.gte => x, :created_at.lt => (x + 1.month)).count]
+          end.to_h
         end
-        d << (d.last + 1.month) while d.last < Date.new(Date.today.year, Date.today.month, 1)
+
+        if defined?(make_projection)
+          current_month_value = data.values.last
+          days_in_month = Date.new(Date.today.year, Date.today.month, -1).day
+          days_passed = Date.today.day
+          projected_value = (current_month_value.to_f / days_passed * days_in_month).round
+          projection = [projected_value - current_month_value, 0].max
         end
       %>
 
       new Chart(document.getElementById("canvas-<%=r%>").getContext("2d"), {
       type: 'bar',
       data: {
-        labels: <%== defined?(data) ? data.keys.to_json : d.map { |x| "#{Date::MONTHNAMES[x.month]} #{x.year}" }.to_json %>,
+        labels: <%== data.keys.to_json %>,
         datasets: [
           {
-            <% if defined?(label) %>
-              label: <%== label.to_json %>,
-            <% end %>
-            backgroundColor: '#00B963',
-            borderColor: '#00B963',
-            data: <%== defined?(data) ? data.values.to_json : d.map { |x| countable.and(:created_at.gte => x, :created_at.lt => (x + 1.month)).count }.to_json %>
+            backgroundColor: 'rgba(0, 185, 99, 1)',
+            borderColor: 'rgba(0, 185, 99, 1)',
+            data: <%== data.values.to_json %>
+          },
+          {
+            backgroundColor: 'rgba(0, 185, 99, 0.5)',
+            borderColor: 'rgba(0, 185, 99, 0.5)',
+            data: <%== data.size.times.map { |i| i == data.size - 1 ? (defined?(projection) ? projection : nil) : nil }.to_json %>
           }
         ],
       },
       options: {
         plugins: {
-        <% if !defined?(label) %>
           legend: {
             display: false
           },
-        <% end %>
           datalabels: {
             formatter: function(value, context) {
-              return <%==(defined?(unit) ? unit : '').to_json %> + value.toLocaleString() + <%==(defined?(unit_after) ? unit_after : '').to_json %>;
+              if (context.datasetIndex === 1 && value !== null) {
+                var actualValue = context.chart.data.datasets[0].data[context.dataIndex];
+                return <%==(defined?(unit) ? unit : '').to_json %> + (actualValue + value).toLocaleString() + <%==(defined?(unit_after) ? unit_after : '').to_json %>;
+              }
+              return value ? <%==(defined?(unit) ? unit : '').to_json %> + value.toLocaleString() + <%==(defined?(unit_after) ? unit_after : '').to_json %> : null;
             }
           }
         },
         responsive: true,
         scales: {
-          // x: {
-          //     title: {
-          //       display: true,
-          //       text: 'Month'
-          //     }
-          //   },
+          x: {
+            stacked: true
+          },
           y: {
-              title: {
-                display: true,
-                text: <%== (defined?(unit) ? unit : (defined?(unit_after) ? unit_after : '')).to_json %>
-              }
+            stacked: true,
+            title: {
+              display: true,
+              text: <%== (defined?(unit) ? unit : (defined?(unit_after) ? unit_after : '')).to_json %>
             }
+          }
         }
       }
     });

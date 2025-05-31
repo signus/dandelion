@@ -13,6 +13,7 @@ class Option
   field :type, type: String
   field :by_invitation, type: Boolean
   field :hide_members, type: Boolean
+  field :order, type: Integer
 
   def self.admin_fields
     {
@@ -20,6 +21,7 @@ class Option
       description: :text_area,
       capacity: :number,
       cost: :number,
+      order: :number,
       split_cost: :check_box,
       type: :text,
       gathering_id: :lookup,
@@ -57,15 +59,15 @@ class Option
   def self.icon(type)
     case type
     when 'Tier'
-      'fa-th-list'
+      'bi-grid-fill'
     when 'Accommodation'
-      'fa-home'
+      'bi-house-door'
     when 'Transport'
-      'fa-bus'
+      'bi-bus-front'
     when 'Food'
-      'fa-cutlery'
+      'bi-cup-hot'
     when 'Extra'
-      'fa-plus-circle'
+      'bi-plus-square-fill'
     end
   end
 

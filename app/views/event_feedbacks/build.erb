@@ -6,19 +6,19 @@
       <%= f.hidden_field :rating %>
       <script>
         $(function() {
-          $('.rate .fa-star').hover(function() {
+          $('.rate .bi-star-fill').hover(function() {
             $(this).prevAll().addBack().css('color', '#f5b041');
             $(this).nextAll().css('color', '#bbb');
           }, function() {
             var rating  = $('input[name="event_feedback[rating]"]').val();
             if (rating) {
-              $('.rate .fa-star').css('color', '#bbb');
-              $('.rate .fa-star').slice(0, rating).css('color', '#f5b041');
+              $('.rate .bi-star-fill').css('color', '#bbb');
+              $('.rate .bi-star-fill').slice(0, rating).css('color', '#f5b041');
             } else {
-              $('.rate .fa-star').css('color', '#bbb');
+              $('.rate .bi-star-fill').css('color', '#bbb');
             }
           });
-          $('.rate .fa-star').click(function() {
+          $('.rate .bi-star-fill').click(function() {
             $('input[name="event_feedback[rating]"]').val($(this).index() + 1);
           });
           $($('input[name="event_feedback[rating]"]')[0].form).submit(function() {
@@ -31,7 +31,7 @@
       </script>
       <div class="rate my-2">
         <% 1.upto(5) do |i| %>
-          <i class="fa fa-star" style="cursor: pointer; font-size: 50px; color: #bbb"></i>
+          <i class="bi bi-star-fill" style="cursor: pointer; font-size: 50px; color: #bbb"></i>
         <% end %>
       </div>
       <% @event.feedback_questions_a.each_with_index { |q,i| %>
@@ -46,14 +46,6 @@
       <% } %>
       <%= checkbox 'Allow this feedback to be quoted publicly', slug: :public, checked: true %>
       <%= checkbox 'Anonymise this feedback', slug: :anonymise %>
-      <div class="mb-3">
-        <span style="font-size: 2em">👩🏼‍🔬 🍄</span>
-        <a href="https://uclpsych.eu.qualtrics.com/jfe/form/SV_a659Vcn54PVUJUi" target="_blank">
-          Participate in a University College London research study      
-          on how experiences at Dandelion events
-          compare to those induced by psychedelic substances &rarr;
-        </a>
-      </div>
       <%= f.submit_block button_text: 'Submit' %>
     <% end %>
   </div>

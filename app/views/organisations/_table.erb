@@ -19,7 +19,7 @@
     <tr>
       <td>Location</td>
       <td>
-        <a target="_blank" href="https://www.google.co.uk/maps?q=<%= @organisation.location %>"><%= @organisation.location %></a>
+        <a target="_blank" href="https://www.google.com/maps?q=<%= @organisation.location %>"><%= @organisation.location %></a>
       </td>
     </tr>
   <% end %>
@@ -31,6 +31,7 @@
               role: 'admin',
               accounts: @organisation.admins.order('name asc'),
               add_and_remove: organisation_admin?,
+              min_accounts: 1,              
               new_object: Organisationship.new,
               new_url: "/o/#{@organisation.slug}/organisationships/admin",
               destroy_url: "/o/#{@organisation.slug}/organisationships/unadmin"

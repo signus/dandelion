@@ -26,7 +26,7 @@ Dandelion::App.controller do
     redirect "/g/#{@gathering.slug}/join" if @gathering.privacy == 'open'
     @title = @gathering.name
     @og_desc = "#{@gathering.name} is being co-created on Dandelion"
-    @og_image = @gathering.image.url if @gathering.image
+    @og_image = @gathering.image.thumb('1920x1920').url if @gathering.image
     @account = Account.new
     erb :'mapplications/apply'
   end
@@ -37,6 +37,16 @@ Dandelion::App.controller do
     if current_account
       @account = current_account
     else
+
+      if ENV['RECAPTCHA_SECRET_KEY']
+        agent = Mechanize.new
+        captcha_response = JSON.parse(agent.post(ENV['RECAPTCHA_VERIFY_URL'], { secret: ENV['RECAPTCHA_SECRET_KEY'], response: params['g-recaptcha-response'] }).body)
+        unless captcha_response['success'] == true
+          flash[:error] = "Our systems think you're a bot. Please email #{ENV['CONTACT_EMAIL']} if you keep having trouble."
+          redirect(back)
+        end
+      end
+
       redirect back unless params[:account] && params[:account][:email]
       unless (@account = Account.find_by(email: params[:account][:email].downcase))
         @account = Account.new(mass_assigning(params[:account], Account))

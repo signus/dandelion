@@ -3,8 +3,8 @@
 <% if @event %>
   <% if event_email_viewer? %>
     <pre>
-    <%== Account.and(:id.in => @orders.pluck(:account_id)).map { |account| "#{Sanitize.fragment(account.name)} &lt;#{Sanitize.fragment(account.email)}&gt;" }.join(', ') %>
-  </pre>
+      <%== Account.and(:id.in => @orders.pluck(:account_id)).map { |account| "#{Sanitize.fragment(account.name)} &lt;#{Sanitize.fragment(account.email)}&gt;" }.join(', ') %>
+    </pre>
   <% end %>
   <% unless params[:search] %>
     <%= partial :'events/ticket_types_progress' %>
@@ -14,8 +14,8 @@
       <p><%== pagination_details orders, model: 'Order' %></p>
     </div>
     <div class="col-auto">
-      <a class="btn btn-primary" href="/events/<%= @event.id %>/orders.csv?<%= request.query_string %>"><i class="fa fa-download"></i> CSV</a>
-      <a class="btn btn-primary" href="/events/<%= @event.id %>/orders.pdf?<%= request.query_string %>"><i class="fa fa-download"></i> PDF</a>
+      <a class="btn btn-primary" href="/events/<%= @event.id %>/orders.csv?<%= request.query_string %>"><i class="bi bi-download"></i> CSV</a>
+      <a class="btn btn-primary" href="/events/<%= @event.id %>/orders.pdf?<%= request.query_string %>"><i class="bi bi-download"></i> PDF</a>
     </div>
   </div>
 <% elsif @organisation %>
@@ -24,7 +24,7 @@
       <p><%== pagination_details orders, model: 'Order' %></p>
     </div>
     <div class="col-auto">
-      <a class="btn btn-primary" href="/o/<%= @organisation.slug %>/orders.csv?<%= request.query_string %>"><i class="fa fa-download"></i> CSV</a>
+      <a class="btn btn-primary" href="/o/<%= @organisation.slug %>/orders.csv?<%= request.query_string %>"><i class="bi bi-download"></i> CSV</a>
     </div>
   </div>
 <% else %>
@@ -32,8 +32,14 @@
 <% end %>
 <script>
   $(function () {
-    var colIndex = $("#orders th").toArray().indexOf($("th[data-col-name='created-at']")[0])
-    $('#orders').dataTable({bInfo: false, paging: false, searching: false, order: [[colIndex, "desc"]]});
+
+      var colIndex = $("#orders th").toArray().indexOf($("th[data-col-name='created-at']")[0])
+
+      $(document).ajaxStop(function() {
+        if (!$('#orders').hasClass('dataTable')) {
+          $('#orders').dataTable({bInfo: false, paging: false, searching: false, order: [[colIndex, "desc"]]});
+        }
+      })
   })
 </script>
 <table class="table" id="orders">
@@ -49,9 +55,9 @@
       <th>Value</th>
       <th>Via</th>
       <% if @event %>
+        <th>Answers</th>
         <th>Updates from organisation?</th>
         <th>Updates from facilitator?</th>
-        <th>Answers</th>
       <% end %>
       <th data-col-name="created-at">Created at</th>
       <th>Feedback</th>
@@ -71,7 +77,9 @@
       <td>
         <a href="/e/<%= order.event.slug %>"><%= order.event.name %></a>
         <div>
-          <span data-toggle="tooltip" title="<%= d = (order.event.start_time.to_date - Date.today).to_i; pluralize(d, 'day') %> to go" class="text-primary"><% d.times do %><i class="fa fa-square mr-1"></i><% end %></span>
+          <span data-toggle="tooltip" title="<%= d = (order.event.start_time.to_date - Date.today).to_i; d >= 30 ? '30+ days' : pluralize(d, 'day') %> to go" class="text-primary">
+            <% [d, 30].min.times do %><i class="bi bi-square-fill mr-1"></i><% end %>
+          </span>
         </div>
         <div data-pagelet-url="/events/<%=order.event.id%>/progress?full_width=true" class="my-1"></div>
         <% if order.event.discounted_ticket_revenue > 0 %>
@@ -94,12 +102,22 @@
       <abbr data-toggle="tooltip" title="<%= order.original_description %>">
         <%= m (order.value || 0), order.currency %>
       </abbr>
-      <% if order.application_fee_amount %>
-        (<%= m ((order.value || 0) - (order.application_fee_amount || 0)), order.currency %> paid to
-        <a href="/u/<%= order.revenue_sharer.username %>"><%= order.revenue_sharer.name %></a>)
+      <% if order.application_fee_amount && !order.application_fee_paid_to_dandelion %>
+        (<%= m ((order.value || 0) - (order.application_fee_amount || 0)), order.currency %> paid
+        <% if order.revenue_sharer %>
+          to <a href="/u/<%= order.revenue_sharer.username %>"><%= order.revenue_sharer.name %></a>
+        <% else %>
+          to revenue sharer
+        <% end %>)
       <% end %>
-      <% if order.credit_payable_to_revenue_sharer %>
-        <span class="label label-default"><%= m order.credit_payable_to_revenue_sharer, order.currency %> credit due</span>
+      <% if order.transferred? %>
+        <span class="label label-default">Transferred</span>
+      <% end %>
+      <% if order.credit_applied %>
+        <span class="label label-default"><%= m order.credit_applied, order.currency %> credit applied</span>
+      <% end %>
+      <% if order.fixed_discount_applied %>
+        <span data-toggle="tooltip" title="<%=order.discount_code.code %>" class="label label-default"><%= m order.fixed_discount_applied, order.currency %> discount applied</span>
       <% end %>
       <% if order.percentage_discount %>
         <span data-toggle="tooltip" class="label label-default mr-1" title="<%= "#{order.percentage_discount}%" %> discount code applied<% if order.discount_code %>: <%=order.discount_code.code%><% end %>">
@@ -113,8 +131,6 @@
       <% end %>
       <% if order.coinbase_checkout_id %>
         <span class="label label-default bg-coinbase mr-1">Coinbase</span>
-      <% elsif order.seeds_secret %>
-        <span class="label label-default bg-seeds mr-1">SEEDS: <%= order.seeds_secret %></span>
       <% elsif order.evm_secret %>
         <span class="label label-default bg-secondary mr-1">EVM: <%= order.evm_secret %></span>
       <% elsif order.oc_secret %>
@@ -122,17 +138,20 @@
       <% end %>
       <% if order.incomplete? %>
         <% if order.deleted? %>
-          <i data-toggle="tooltip" title="Timed out" class="fa fa-warning"></i>
+          <i data-toggle="tooltip" title="Timed out" class="bi bi-exclamation-triangle-fill"></i>
         <% else %>
-          <i data-toggle="tooltip" title="This person is in the process of completing the order. If they don't complete it soon, the order will be removed." class="fa fa-spin fa-circle-o-notch"></i>
+          <i data-toggle="tooltip" title="This person is in the process of completing the order. If they don't complete it soon, the order will be removed." class="bi bi-spin bi-arrow-repeat"></i>
         <% end %>
       <% elsif order.deleted? %>
-        <i data-toggle="tooltip" title="Deleted" class="fa fa-trash"></i>
+        <i data-toggle="tooltip" title="Deleted" class="bi bi-trash"></i>
       <% end %>
     </td>
     <td>
       <% if order.hear_about %>
         <%= order.hear_about %><br />
+      <% end %>
+      <% if order.via %>
+        <%= order.via %><br />
       <% end %>
       <% if order.affiliate; if order.affiliate.is_a?(Account) %>
         <a href="/u/<%= order.affiliate.username %>"><%= order.affiliate.name %></a><br />
@@ -156,16 +175,12 @@
     </td>
     <% if @event %>
       <td>
-        <% if order.opt_in_organisation %><i class="fa fa-check"></i><% end %>
-      </td>
-      <td>
-        <% if order.opt_in_facilitator %><i class="fa fa-check"></i><% end %>
-      </td>
-      <td>
         <% order.answers.each { |q,a| if q && a %>
         <p style="width: 400px">
           <strong>
             <% if m = q.match(/\[(.*)\]/) %>
+              <%== Sanitize.fragment(Rinku.auto_link(m[1]), Sanitize::Config::DANDELION) %>
+            <% elsif m = q.match(/\{(.*)\}/) %>
               <%== Sanitize.fragment(Rinku.auto_link(m[1]), Sanitize::Config::DANDELION) %>
             <% else %>
               <%== Sanitize.fragment(Rinku.auto_link(q), Sanitize::Config::DANDELION) %>
@@ -174,12 +189,18 @@
         </p>
         <p style="width: 400px">
           <% if q =~ /\[.*\]/ %>
-            <i class="fa fa-check"></i>
+            <i class="bi bi-check-lg"></i>
           <% else %>
             <%== Sanitize.fragment(Rinku.auto_link(a.gsub("\n", '<br />')), Sanitize::Config::DANDELION) %>
           <% end %>
         </p>
       <% end } if order.answers %>
+    </td>
+    <td>
+      <% if order.opt_in_organisation %><i class="bi bi-check-lg"></i><% end %>
+    </td>
+    <td>
+      <% if order.opt_in_facilitator %><i class="bi bi-check-lg"></i><% end %>
     </td>
   <% end %>
   <td data-sort="<%= order.created_at.iso8601 %>">
@@ -190,29 +211,40 @@
       <% if (event_feedback = order.event.event_feedbacks.find_by(account: order.account)) && !event_feedback.anonymise %>
         <a href="/event_feedbacks/<%= event_feedback.id %>">
           <% if event_feedback.rating %>
-            <% event_feedback.rating.times do %><i class="fa fa-star"></i><% end %>
+            <% event_feedback.rating.times do %><i class="bi bi-star-fill"></i><% end %>
           <% else %>
             <%= event_feedback.id %>
           <% end %>
         </a>
-      <% elsif order.event.finished? %>
+      <% elsif order.event.started? %>
         <% if order.account.unsubscribed || order.account.unsubscribed_feedback %>
           <span class="text-muted">Unsubscribed from feedback emails</span>
         <% else %>
-          <a href="<%= ENV['BASE_URI'] %>/events/<%= order.event_id %>/resend_feedback_email/<%= order.account_id %>">Resend feedback email</a>
+          <a href="<%= ENV['BASE_URI'] %>/events/<%= order.event_id %>/resend_feedback_email/<%= order.account_id %>">
+            <% if order.event.finished? %>
+              Resend feedback email
+            <% elsif order.event.started? %>
+              Send feedback email
+            <% end %>
+          </a>
         <% end %>
       <% end %>
     <% end %>
   </td>
   <td nowrap>
-    <%= dropdown_nav [
-        (['Restore and complete', "/events/#{order.event_id}/orders/#{order.id}/restore_and_complete"] if order.deleted?),
+    <% if order.deleted? %>
+      <%= dropdown_nav [
+        ['Restore and complete', "/events/#{order.event_id}/orders/#{order.id}/restore_and_complete"],
+      ].compact, button_text: %(Actions <i class="bi bi-caret-down-fill"></i>), container_class: 'btn-group mb-1' %>
+    <% else %>
+      <%= dropdown_nav [
         ['Link to order confirmation', "/orders/#{order.id}"],
         ['Resend order confirmation', "/orders/#{order.id}/send_tickets"],
         ['Transfer to another event', "/orders/#{order.id}/transfer"],
         (['Remove and refund order', "/events/#{order.event.id}/orders/#{order.id}/destroy"] if order.event.refund_deleted_orders && order.session_id),
         (['Delete order', "/events/#{order.event.id}/orders/#{order.id}/destroy"] if !(order.event.refund_deleted_orders && order.session_id)),
-      ].compact, button_text: %(Actions <i class="fa fa-caret-down"></i>), container_class: 'btn-group mb-1' %>
+      ].compact, button_text: %(Actions <i class="bi bi-caret-down-fill"></i>), container_class: 'btn-group mb-1' %>
+    <% end %>
   </td>
 </tr>
 <% } %>

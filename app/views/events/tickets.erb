@@ -1,7 +1,6 @@
 <%= partial :'events/nav', locals: { event: @event } %>
 <div class="row">
   <div class="col">
-    <% # submit the form when the user stops typing %>
     <% form_tag '', method: 'get', class: 'submitOnChange searchForm form-inline mb-3', onsubmit: %{
       $('#tickets-table').attr('data-pagelet-url', $('#tickets-table').attr('data-pagelet-url').split('?')[0] + '?' + $(this).serialize());
       $('#tickets-table').load($('#tickets-table').attr('data-pagelet-url'))
@@ -9,17 +8,18 @@
     } do %>
       <div class="form-group">
         <label>Search tickets</label>
-        <%= text_field_tag :q, class: 'form-control', value: params[:q] %>
+        <%= text_field_tag :q, class: 'form-control', value: params[:q], autocomplete: 'off' %>
       </div>
       <%= checkbox 'Complete' %>
       <%= checkbox 'Incomplete' %>
+      <%= checkbox 'Discounted' %>
       <%= checkbox 'Deleted' %>
       <%= hidden_field_tag :search, value: 1 %>
       <%= submit_tag 'Search', class: 'btn btn-primary' %>
     <% end %>
   </div>
-  <div class="col-auto">
-    <a id="create-ticket-button" class="btn btn-primary show mb-1" href="javascript:;" onclick="$(this).hide(); $('#create-ticket').show().find('input').first().focus()"><i class="fa fa-plus-circle"></i> Create a ticket</a>
+  <div class="col-12 ml-2 mb-3 col-lg-auto ml-lg-0 mb-lg-0">
+    <a id="create-ticket-button" class="btn btn-primary show mb-1" href="javascript:;" onclick="$(this).hide(); $('#create-ticket').show().find('input').first().focus()"><i class="bi bi-plus-lg"></i> Create a ticket</a>
   </div>
 </div>
 <% if params[:create_ticket] %>

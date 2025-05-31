@@ -17,23 +17,9 @@
       <% end %>
       <% if current_account %>
         <div class="mb-2">
-          <div class="d-inline-block mb-1" data-pagelet-url="/activities/<%= @activity.id %>/activityship">
-            <%= partial :'activities/activityship', locals: { activity: @activity } %>
+          <div class="d-inline-block mb-1" data-pagelet-url="/activities/<%= @activity.id %>/activityship?membership_toggle=1">
+            <%= partial :'activities_and_local_groups/resourceship', locals: { resource: @activity, resourceship_name: 'activityship', resource_path: "/activities/#{@activity.id}", membership_toggle: true } %>
           </div>
-          <% if current_account && activityship = @activity.activityships.find_by(account: current_account) %>
-            <% if !activityship.hide_membership? %>
-              <a class="btn btn-primary" href="/activities/<%= @activity.id %>/hide_membership">Membership public</a>
-            <% else %>
-              <a class="btn btn-outline-primary" href="/activities/<%= @activity.id %>/show_membership">Membership hidden</a>
-            <% end %>
-            <% if activityship.admin? %>
-              <% if activityship.receive_feedback? %>
-                <a class="btn btn-primary" href="/activities/<%= @activity.id %>/receive_feedback/0">Receiving feedback</a>
-              <% else %>
-                <a class="btn btn-outline-primary" href="/activities/<%= @activity.id %>/receive_feedback/1">Not receiving feedback</a>
-              <% end %>
-            <% end %>
-          <% end %>
         </div>
       <% else %>
         <% if @activity.privacy == 'open' %>
@@ -59,6 +45,7 @@
                   role: 'admin',
                   accounts: @activity.admins.order('name asc'),
                   add_and_remove: activity_admin?,
+                  min_accounts: 1,  
                   new_object: Activityship.new,
                   new_url: "/activities/#{@activity.id}/activityships/admin",
                   destroy_url: "/activities/#{@activity.id}/activityships/unadmin"
@@ -104,7 +91,7 @@
 <% end %>
 
 <h2 class="mt-5">Events</h2>
-<a class="btn btn-primary mb-3" href="/o/<%= @activity.organisation.slug %>/events?activity_id=<%= @activity.id %>">All events</a>
+<a class="btn btn-primary mb-3" href="/o/<%= @activity.organisation.slug %>/events?search=1&activity_id=<%= @activity.id %>">All events</a>
 <% if activity_admin? %>
   <a class="btn btn-primary mb-3" href="/events/new?activity_id=<%= @activity.id %>">Create an event</a>
 <% end %>
@@ -138,22 +125,4 @@
 <% if @activity.event_feedbacks.unscoped.count > 0 %>
   <h2 class="mt-5">Feedback</h2>
   <div class="mt-3" data-pagelet-url="/activities/<%= @activity.id %>/show_feedback"></div>
-<% end %>
-
-<% if @activityship || @activity.privacy == 'open' %>
-  <% if !@activity.hide_discussion %>
-    <% if current_account %>
-      <h2 class="mt-5">Discussion</h2>
-      <% if @activityship %>
-        <div data-pagelet-url="/activities/<%= @activity.id %>/subscribe_discussion">
-          <%= partial :'activities/subscribe_discussion', locals: { activityship: activityship } %>
-        </div>
-      <% end %>
-      <div class="mt-3" data-pagelet-url="/commentable?commentable_type=Activity&commentable_id=<%= @activity.id %>">
-        <%= partial :'comments/commentable', locals: { commentable: @activity } %>
-      </div>
-    <% else %>
-      <%= partial :'comments/sign_in', locals: { commentable: @activity } %>
-    <% end %>
-  <% end %>
 <% end %>

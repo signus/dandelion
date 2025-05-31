@@ -1,6 +1,6 @@
 <script>
   $(function() {
-    $('#doc-body h2').css('padding-top', $('#header').height())
+    $('#doc-body h2:not(:first)').addClass('mt-5')
     $('#sticky-index').css('top', $('#header').height() + parseInt($('.content').css('paddingTop')))
   })
 </script>
@@ -20,7 +20,7 @@
       </div>
       <div class="col-auto">
         <% if admin? %>
-          <a class="btn btn-primary" href="/docs/<%=@doc_page.slug%>/edit">Edit <i class="fa fa-pencil"></i></a>
+          <a class="btn btn-primary" href="/docs/<%=@doc_page.slug%>/edit">Edit <i class="bi bi-pencil-fill"></i></a>
         <% end %>
       </div>
     </div>
@@ -41,7 +41,7 @@
 
 
     <p class="lead">
-      Still need support? <a href="mailto:<%=ENV['CONTACT_EMAIL']%>">Email us</a> or <a href="https://t.me/stephenreid321">ask us on Telegram</a>
+      Still need support? <a href="mailto:<%=ENV['CONTACT_EMAIL']%>">Get in touch via email</a>
     </p>
 
   </div>

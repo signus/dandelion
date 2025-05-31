@@ -2,6 +2,7 @@
   <%= partial :'accounts/square', locals: { account: account, style: 'display: block;' } %>
 </div>
 <div class="search-result-content">
+
   <h2>
     <a class="text-dark" href="/u/<%= account.username %>"><%= account.name %></a>
   </h2>
@@ -13,4 +14,28 @@
       <%= partial :'accounts/table', locals: { account: account, birthday: defined?(birthday) } %>
     <% end %>
   </div>
-</div>
+
+  <% if defined?(facilitator_info) && facilitator_info %>
+
+    <% if account.feedback_summary %>
+      <div class="mt-2">
+        <div class="mb-1" data-toggle="tooltip" title="AI-generated summary ✨">
+          <big>
+            <%= account.feedback_summary %>
+          </big>
+        </div>
+      </div>
+    <% end %>
+
+    <% if account.youtube_video_url %>
+      <div class="row mt-3">
+        <div class="col-12 col-xl-6">
+          <div class="embed-responsive embed-responsive-16by9">
+            <iframe class="embed-responsive-item" src="<%= youtube_embed_url(account.youtube_video_url) %>" allowfullscreen></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+<% end %>

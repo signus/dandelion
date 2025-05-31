@@ -1,24 +1,11 @@
 <% form_tag '', method: 'get', class: 'searchForm form-inline' do %>
   <div class="form-group">
     <label>Events between</label>
-    <%= text_field_tag :from, class: 'form-control datepicker mx-1', value: @from.to_fs(:db_local) %>
+    <%= text_field_tag :from, class: 'form-control datepicker mx-1', value: (@from.to_fs(:db_local) if @from) %>
   </div>
   <div class="form-group">
     <label>and</label>
     <%= text_field_tag :to, class: 'form-control datepicker mx-1', value: (@to.to_fs(:db_local) if @to) %>
-  </div>
-  <div class="form-group">
-    <label>Min. tickets</label>
-    <%= number_field_tag :min_tickets, class: 'form-control mx-1', value: @min_tickets %>
-  </div>
-  <div class="form-group">
-    <label>Min. order value</label>
-    <div class="input-group">
-      <div class="input-group-prepend">
-        <span class="input-group-text">£</span>
-      </div>
-      <%= number_field_tag :min_order_value, style: 'width: 8em', class: 'form-control', value: @min_order_value %>
-    </div>
   </div>
   <%= hidden_field_tag :search, value: 1 %>
   <%= submit_tag 'Search', class: 'btn btn-primary' %>
@@ -53,6 +40,7 @@
         <th data-col-name="value">Value</th>
         <th data-col-name="created_at">Created at</th>
         <th data-col-name="contribution">Contribution</th>
+        <th data-col-name="remaining">Remaining</th>
       </tr>
     </thead>
     <% organisations = Organisation.and(:id.in => Event.and(:id.in => Order.and(:created_at.gte => @from, :created_at.lt => @to + 1.day, :value.ne => nil).pluck(:event_id)).pluck(:organisation_id)) %>
@@ -63,8 +51,6 @@
     events = Event.and(:id.in => tickets.pluck(:event_id))
     orders_sum = orders.sum { |o| Money.new(o.value*100, o.currency) }
     orders_sum = orders_sum > 0 ? orders_sum.exchange_to('GBP') : Money.new(0, 'GBP')
-
-    next unless tickets.count >= @min_tickets || orders_sum >= Money.new(@min_order_value*100, 'GBP')
 
     %>
     <tr>
@@ -81,16 +67,31 @@
         <%= orders_sum.format(no_cents: true) %>
       </td>
       <td data-sort="<%=organisation.created_at.to_fs(:db_local)%>"><%=organisation.created_at%></td>
-      <% r = organisation.contribution_requested %>
-      <% p = organisation.contribution_paid %>
-      <td data-sort="<%=p/r%>">
-        <%=m p, organisation.currency%>/<%=m r, organisation.currency%>
-        <div class="progress" style="height: 30px">
-          <div class="progress-bar" role="progressbar" style="width: <%= "#{w = 100*p.to_f/r.to_f}%" %>;">
-            <% if w > 0 %><%= w.to_f.round %>%<% end %>
-          </div>
-        </div>
-      </td>
+
+      <% r = organisation.contribution_requested_gbp_cache %>
+      <% p = organisation.contribution_paid_gbp_cache %>
+      <% if r && p %>
+        <% w = organisation.fraction_paid*100 if organisation.fraction_paid %>
+        <% balance = r - p %>
+        <td data-sort="<%=organisation.fraction_paid%>">
+          <%=m p, 'GBP'%>/<%=m r, 'GBP'%>
+
+          <% if w %>
+            <div class="progress my-3" style="height: 30px">
+              <div class="progress-bar" role="progressbar" style="width: <%= "#{w > 100 ? 100 : w}%" %>;">
+                <% if w > 0 %><%= w.to_f.round %>%<% end %>
+              </div>
+            </div>
+          <% end %>
+        </td>
+        <td data-sort="<%=balance%>">
+          <%=m balance, 'GBP'%>
+        </td>
+      <% else %>
+        <td data-sort="0"></td>
+        <td data-sort="0"></td>
+      <% end %>
+
     </tr>
     <% } %>
   </table>

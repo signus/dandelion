@@ -1,4 +1,4 @@
-<div class="card mb-3">
+<div class="card shadow-sm">
   <h3 class="card-header bg-primary text-white">Thanks for booking!</h3>
   <div class="card-body">
     <p class="lead mb-3"><strong>Check your inbox for the confirmation email with your tickets.</strong></p>
@@ -8,7 +8,7 @@
     </p>
 
     <% if @event.redirect_url %>
-      <p>Redirecting you to <a href="<%= @event.redirect_url %>"><%= @event.redirect_url %></a>&hellip; <i class="fa fa-spin fa-circle-o-notch"></i></p>
+      <p>Redirecting you to <a href="<%= @event.redirect_url %>"><%= @event.redirect_url %></a>&hellip; <i class="bi bi-spin bi-arrow-repeat"></i></p>
       <script>
         $(function () {
           setTimeout(function () {
@@ -18,57 +18,79 @@
       </script>
     <% else %>
 
-      <% if @order.tickets.count > 1 %>
-        <p class="mb-3"><strong>You're welcome to let us know the names and email addresses of ticketholders so they hear about any important updates to the event (we won't use these details for anything else):</strong></p>
-        <div class="mb-3">
-          <% @order.tickets.each_with_index { |ticket,i| %>
-          <div class="p-2 rounded mb-2 border border-primary ticket">
-            <p class="mb-1">
-              <i class="fa fa-ticket"></i>
-              <%=ticket.ticket_type.try(:name)%>
-            </span>
-          </p>
+
+      <script>
+        function showSavedTooltipAndSubmit(element) {
+          // Create tooltip if it doesn't exist
+          if (!$(element).data('bs.tooltip')) {
+            $(element).tooltip({
+              title: 'Saved!',
+              trigger: 'manual',
+              placement: 'top'
+            });
+          }
+
+          // Show tooltip
+          $(element).tooltip('show');
+
+          // Hide and submit
+          setTimeout(function() {
+            $(element).tooltip('hide');
+            $(element.form).submit();
+          }, 500);
+        }
+      </script>
+      <p class="mb-3">
+        <strong>
+          If you booked
+          <%= @order.tickets.count == 1 ? 'the ticket' : 'tickets' %>
+          for someone else, you're welcome to let us know the
+          <%= @order.tickets.count == 1 ? 'name and email address of the ticketholder' : 'names and email addresses of ticketholders' %>
+          so they hear about any important updates to the event (we won't use these details for anything else):</strong></p>
+      <div class="mb-3">
+        <% @order.tickets.each_with_index { |ticket,i| %>
+        <div class="alert alert-success ticket">
+          <h4 class="mb-2">
+            <i class="bi bi-ticket-detailed-fill"></i>
+            <%=ticket.ticket_type.try(:name)%>
+          </h4>
           <div class="row">
             <div class="col-6">
-              <div data-pagelet-url="/events/<%=@event.id%>/orders/<%=@order.id%>/ticketholders/<%=ticket.id%>/name">
+              <div data-pagelet-url="/events/<%=@event.id%>/orders/<%=@order.id%>/ticketholders/<%=ticket.id%>/name" data-pagelet-no-opacity-change="true">
                 <%= partial :"events/ticketholder_name", locals: { ticket: ticket } %>
               </div>
             </div>
             <div class="col-6">
-              <div data-pagelet-url="/events/<%=@event.id%>/orders/<%=@order.id%>/ticketholders/<%=ticket.id%>/email">
-                <%= partial :"events/ticketholder_email", locals: { ticket: ticket } %>
+              <div data-pagelet-url="/events/<%=@event.id%>/orders/<%=@order.id%>/ticketholders/<%=ticket.id%>/email?success=<%=params[:success] ? 1 : 0 %>" data-pagelet-no-opacity-change="true">
+                <%= partial :"events/ticketholder_email", locals: { ticket: ticket, success: (params[:success] ? 1 : 0) } %>
               </div>
             </div>
           </div>
         </div>
         <% } %>
       </div>
-    <% end %>
 
-    <% if @event.affiliate_credit_percentage %>
-      <% affiliate_link = "#{ENV['BASE_URI']}/e/#{@event.slug}?affiliate_type=Account&affiliate_id=#{@order.account_id}" %>
-      <p>
-        <a href="<%= affiliate_link %>">Here's your affiliate link for this event.</a>
-        For each person who buys a ticket via this link,
-        you receive credit that can used to attend future events equal to <%= @event.affiliate_credit_percentage %>% of the order value.
-      </p>
-      <div class="mb-3">
-        <h5>Share your link</h5>
-        <%= partial :share, locals: { share_url: affiliate_link } %>
-      </div>
-    <% end %>
+      <% if @event.affiliate_credit_percentage %>
+        <% affiliate_link = "#{ENV['BASE_URI']}/e/#{@event.slug}?affiliate_type=Account&affiliate_id=#{@order.account_id}" %>
+        <p>
+          <a href="<%= affiliate_link %>">Here's your affiliate link for this event.</a>
+          For each person who buys a ticket via this link,
+          you receive credit that can used to attend future events equal to <%= @event.affiliate_credit_percentage %>% of the order value.
+        </p>
+        <div class="mb-3">
+          <h5>Share your link</h5>
+          <%= partial :share, locals: { share_url: affiliate_link } %>
+        </div>
+      <% end %>
 
-    <h5 class="mb-1">Add to calendar</h5>
-    <p class="mb-1"><%= partial :'events/add_to_calendar' %></p>
-    <% if !@event.secret? && !(@order && @event.affiliate_credit_percentage) %>
-      <h5 class="mb-1">Share this event</h5>
-      <%= partial :share %>
-      <h5 class="my-1">QR code</h5>
-      <a target="_blank" href="/qr?url=<%= "#{ENV['BASE_URI']}/e/#{@event.slug}" %>"><img src="/qr?url=<%= "#{ENV['BASE_URI']}/e/#{@event.slug}" %>" style="width: 50px"></a>
+      <h5 class="mb-1">Add to calendar</h5>
+      <p class="mb-1"><% if @event.event_sessions.count > 0 %>Full event: <% end %><%= partial :'events/add_to_calendar', locals: { event: @event } %></p>
+      <% @event.event_sessions.each do |event_session| %>
+        <p class="mb-1">Session <%= event_session.session_number %>: <%= partial :'events/add_to_calendar', locals: { event_session: event_session } %></p>
+      <% end %>
+      <% if @order.account && !@event.donations_to_dandelion? %>
+        <%= partial :'accounts/pay', locals: {div_class: 'mt-5', source: "event:#{@event.id}", account: @order.account, nft: true } %>
+      <% end %>
     <% end %>
-    <% if @order.account %>
-      <%= partial :'accounts/pay', locals: {div_class: 'mt-5', source: "event:#{@event.id}", account: @order.account, nft: true } %>
-    <% end %>
-  <% end %>
-</div>
+  </div>
 </div>

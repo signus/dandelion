@@ -3,11 +3,17 @@ class Ticket
   include Mongoid::Timestamps
   include Mongoid::Paranoia
 
+  include TicketNotifications
+
   belongs_to :event, index: true
   belongs_to :account, index: true, optional: true
   belongs_to :order, index: true, optional: true
   belongs_to :ticket_type, index: true, optional: true
   belongs_to :zoomship, index: true, optional: true
+
+  has_many :notifications, as: :notifiable, dependent: :destroy
+
+  attr_accessor :complementary, :prevent_notifications
 
   field :price, type: Float
   field :discounted_price, type: Float
@@ -26,34 +32,9 @@ class Ticket
   field :name, type: String
   field :email, type: String
   field :payment_completed, type: Boolean
-
-  def incomplete?
-    !payment_completed
-  end
-
-  def complete?
-    payment_completed
-  end
-
-  def self.incomplete
-    self.and(:payment_completed.ne => true)
-  end
-
-  def self.complete
-    self.and(payment_completed: true)
-  end
-
-  def firstname
-    return if name.blank?
-
-    parts = name.split
-    n = if parts.count > 1 && %w[mr mrs ms dr].include?(parts[0].downcase.gsub('.', ''))
-          parts[1]
-        else
-          parts[0]
-        end
-    n.capitalize
-  end
+  field :transferred, type: Boolean
+  field :made_available_at, type: Time
+  index({ transferred: 1 })
 
   def self.admin_fields
     {
@@ -77,44 +58,9 @@ class Ticket
     }
   end
 
-  def self.currencies
-    [''] + CURRENCIES_HASH
-  end
-
-  after_save do
-    event.clear_cache if event
-  end
-  after_destroy do
-    event.clear_cache if event
-  end
-
-  def calculate_discounted_price
-    return unless price
-
-    p = price.to_f
-    p *= ((100 - (percentage_discount || 0)).to_f / 100)
-    p *= ((100 - (percentage_discount_monthly_donor || 0)).to_f / 100)
-    p.round(2)
-  end
-
-  attr_accessor :complementary, :prevent_notifications
-
-  def summary
-    "#{event.try(:name)} : #{account.email} : #{ticket_type.try(:name)}"
-  end
-
-  has_many :notifications, as: :notifiable, dependent: :destroy
-
-  def circle
-    account
-  end
-
-  def self.email_viewer?(ticket, account)
-    account && (!ticket.order || Order.email_viewer?(ticket.order, account))
-  end
-
   before_validation do
     if email
+      self.email = email.downcase.strip
       e = EmailAddress.error(email)
       errors.add(:email, "- #{e}") if e
     end
@@ -134,6 +80,7 @@ class Ticket
     if new_record?
       unless complementary
         errors.add(:ticket_type, 'is full') if ticket_type && (ticket_type.number_of_tickets_available_in_single_purchase < 1)
+        errors.add(:ticket_type, 'is not available as sales have ended') if ticket_type && ticket_type.sales_end && Time.now > ticket_type.sales_end
         if ticket_type && ticket_type.minimum_monthly_donation && (
             !account ||
             !(organisationship = event.organisation.organisationships.find_by(account: account)) ||
@@ -147,10 +94,78 @@ class Ticket
     end
   end
 
-  after_create do
-    # ticket might be destroyed again, so this should move
+  def payment_completed!
+    if event.enable_resales? && ticket_type.remaining_including_made_available < 0 && (ticket = ticket_type.tickets.and(:made_available_at.ne => nil).order('made_available_at asc').first)
+      ticket.refund
+      ticket.destroy
+      send_resale_notification
+    end
     event.waitships.find_by(account: account).try(:destroy)
     event.gathering.memberships.create(account: account, unsubscribed: true) if event.gathering
+  end
+
+  after_save do
+    event.clear_cache if event
+  end
+  after_destroy do
+    event.clear_cache if event
+  end
+
+  def self.email_viewer?(ticket, account)
+    account && (!ticket.order || Order.email_viewer?(ticket.order, account))
+  end
+
+  def self.currencies
+    CURRENCY_OPTIONS
+  end
+
+  def self.incomplete
+    self.and(:payment_completed.ne => true)
+  end
+
+  def self.complete
+    self.and(payment_completed: true)
+  end
+
+  def self.discounted
+    self.and(:id.in => self.and(:percentage_discount.ne => nil).pluck(:id) + self.and(:percentage_discount_monthly_donor.ne => nil).pluck(:id))
+  end
+
+  def incomplete?
+    !payment_completed
+  end
+
+  def complete?
+    payment_completed
+  end
+
+  def firstname
+    return if name.blank?
+
+    parts = name.split
+    n = if parts.count > 1 && %w[mr mrs ms dr].include?(parts[0].downcase.gsub('.', ''))
+          parts[1]
+        else
+          parts[0]
+        end
+    n.capitalize
+  end
+
+  def calculate_discounted_price
+    return unless price
+
+    p = price.to_f
+    p *= ((100 - (percentage_discount || 0)).to_f / 100)
+    p *= ((100 - (percentage_discount_monthly_donor || 0)).to_f / 100)
+    p.round(2)
+  end
+
+  def summary
+    "#{event.try(:name)} : #{account.email} : #{ticket_type.try(:name)}"
+  end
+
+  def circle
+    account
   end
 
   after_create :update_zoomship_tickets_count, if: :zoomship
@@ -159,82 +174,33 @@ class Ticket
     zoomship.update_attribute(:tickets_count, zoomship.tickets.count)
   end
 
-  def send_ticket
-    mg_client = Mailgun::Client.new ENV['MAILGUN_API_KEY'], ENV['MAILGUN_REGION']
-    batch_message = Mailgun::BatchMessage.new(mg_client, ENV['MAILGUN_TICKETS_HOST'])
-
-    order = event.orders.new
-    order.account = account
-    account = self.account
-    order.tickets = [self]
-
-    content = ERB.new(File.read(Padrino.root('app/views/emails/tickets.erb'))).result(binding)
-    batch_message.subject(event.ticket_email_title || "Ticket to #{event.name}")
-
-    if event.organisation.send_ticket_emails_from_organisation && event.organisation.reply_to && event.organisation.image
-      header_image_url = event.organisation.image.url
-      batch_message.from event.organisation.reply_to
-      batch_message.reply_to event.email
-    else
-      header_image_url = "#{ENV['BASE_URI']}/images/black-on-transparent-sq.png"
-      batch_message.from ENV['TICKETS_EMAIL_FULL']
-      batch_message.reply_to(event.email || event.organisation.reply_to)
-    end
-
-    batch_message.body_html Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
-
-    unless event.no_tickets_pdf
-      tickets_pdf_filename = "dandelion-#{event.name.parameterize}-#{order.id}.pdf"
-      tickets_pdf_file = File.new(tickets_pdf_filename, 'w+')
-      tickets_pdf_file.write order.tickets_pdf.render
-      tickets_pdf_file.rewind
-      batch_message.add_attachment tickets_pdf_file, tickets_pdf_filename
-    end
-
-    cal = event.ical
-    ics_filename = "dandelion-#{event.name.parameterize}-#{order.id}.ics"
-    ics_file = File.new(ics_filename, 'w+')
-    ics_file.write cal.to_ical
-    ics_file.rewind
-    batch_message.add_attachment ics_file, ics_filename
-
-    [account].each do |account|
-      batch_message.add_recipient(:to, account.email, { 'firstname' => account.firstname || 'there', 'token' => account.sign_in_token, 'id' => account.id.to_s })
-    end
-
-    batch_message.finalize if ENV['MAILGUN_API_KEY']
-
-    unless event.no_tickets_pdf
-      tickets_pdf_file.close
-      File.delete(tickets_pdf_filename)
-    end
-    ics_file.close
-    File.delete(ics_filename)
-  end
-  handle_asynchronously :send_ticket
-
   def refund
     return unless event.refund_deleted_orders && event.organisation && discounted_price && discounted_price > 0 && payment_completed && payment_intent
 
-    begin
-      Stripe.api_key = event.organisation.stripe_sk
-      Stripe.api_version = '2020-08-27'
-      pi = Stripe::PaymentIntent.retrieve payment_intent
-      if event.revenue_sharer_organisationship
-        Stripe::Refund.create(
-          amount: (discounted_price * 100).to_i,
-          charge: pi.charges.first.id,
-          refund_application_fee: true,
-          reverse_transfer: true
-        )
-      else
-        Stripe::Refund.create(
-          amount: (discounted_price * 100).to_i,
-          charge: pi.charges.first.id
-        )
-      end
-    rescue Stripe::InvalidRequestError
-      true
+    # begin
+    Stripe.api_key = event.organisation.stripe_connect_json ? ENV['STRIPE_SK'] : event.organisation.stripe_sk
+    Stripe.api_version = '2020-08-27'
+    pi = Stripe::PaymentIntent.retrieve payment_intent, { stripe_account: event.organisation.stripe_user_id }.compact
+
+    # to handle cases where there was an order-wide discount applied
+    refund_amount = order ? [discounted_price, order.total].min : discounted_price
+    return if refund_amount <= 0
+
+    if event.revenue_sharer_organisationship
+      Stripe::Refund.create(
+        amount: (refund_amount * 100).to_i,
+        charge: pi.charges.first.id,
+        refund_application_fee: true,
+        reverse_transfer: true
+      )
+    else
+      Stripe::Refund.create({
+                              amount: (refund_amount * 100).to_i,
+                              charge: pi.charges.first.id
+                            }, { stripe_account: event.organisation.stripe_user_id }.compact)
     end
+  rescue Stripe::InvalidRequestError => e
+    notify_of_failed_refund(e)
+    true
   end
 end

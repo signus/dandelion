@@ -7,6 +7,7 @@ class Pmail
   belongs_to :mailable, polymorphic: true, index: true, optional: true
   belongs_to :event, index: true, optional: true, inverse_of: :pmails_as_exclusion # Exclude people attending an event
   belongs_to :activity, index: true, optional: true, inverse_of: :pmails_as_exclusion # Exclude people attending upcoming events in an activity
+  belongs_to :local_group, index: true, optional: true, inverse_of: :pmails_as_exclusion # Exclude people in a local group
 
   field :from, type: String
   field :subject, type: String
@@ -15,10 +16,11 @@ class Pmail
   field :monthly_donors, type: Boolean
   field :not_monthly_donors, type: Boolean
   field :facilitators, type: Boolean
+  field :waitlist, type: Boolean
   field :body, type: String
   field :message_ids, type: String
-  field :requested_send_at, type: ActiveSupport::TimeWithZone
-  field :sent_at, type: ActiveSupport::TimeWithZone
+  field :requested_send_at, type: Time
+  field :sent_at, type: Time
   field :link_params, type: String
   field :markdown, type: Boolean
 
@@ -32,6 +34,7 @@ class Pmail
       monthly_donors: :check_box,
       not_monthly_donors: :check_box,
       facilitators: :check_box,
+      waitlist: :check_box,
       link_params: :text,
       requested_send_at: :datetime,
       sent_at: :datetime,
@@ -65,6 +68,7 @@ class Pmail
       self.monthly_donors = nil
       self.not_monthly_donors = nil
       self.facilitators = nil
+      self.waitlist = nil
       self.mailable = nil
       if to_option == 'everyone'
         self.everyone = true
@@ -86,6 +90,10 @@ class Pmail
       elsif to_option.starts_with?('event:')
         self.mailable_type = 'Event'
         self.mailable_id = to_option.split(':').last
+      elsif to_option.starts_with?('waitlist:')
+        self.mailable_type = 'Event'
+        self.mailable_id = to_option.split(':').last
+        self.waitlist = true
       end
     end
   end
@@ -106,7 +114,7 @@ class Pmail
     elsif mailable.is_a?(LocalGroup)
       "local_group:#{mailable_id}"
     elsif mailable.is_a?(Event)
-      "event:#{mailable_id}"
+      waitlist ? "waitlist:#{mailable_id}" : "event:#{mailable_id}"
     end
   end
 
@@ -126,7 +134,7 @@ class Pmail
     elsif mailable.is_a?(LocalGroup)
       "following #{organisation.name}'s local group #{mailable.name}"
     elsif mailable.is_a?(Event)
-      "attending #{organisation.name}'s event #{mailable.name}"
+      waitlist ? "on the waitlist for #{organisation.name}'s event #{mailable.name}" : "attending #{organisation.name}'s event #{mailable.name}"
     end
   end
 
@@ -140,10 +148,11 @@ class Pmail
         elsif facilitators
           organisation.facilitators
         elsif mailable
-          mailable.subscribed_members
+          mailable.is_a?(Event) && waitlist ? mailable.waiters : mailable.subscribed_members
         end
     t = t.and(:id.nin => event.attendees.pluck(:id)) if event
     t = t.and(:id.nin => activity.future_attendees.pluck(:id)) if activity
+    t = t.and(:id.nin => local_group.members.pluck(:id)) if local_group
     t
   end
 
@@ -155,10 +164,18 @@ class Pmail
     end
   end
 
+  def event_emails
+    emails = to_with_unsubscribes_less_ab_tests.pluck(:email)
+    emails += mailable.tickets.complete.and(:email.ne => nil).reject { |ticket| emails.include?(ticket.email) }.map(&:email)
+    emails
+  end
+
   def send_count
-    c = to_with_unsubscribes_less_ab_tests.count
-    c += mailable.tickets.complete.and(:email.ne => nil).count if mailable.is_a?(Event)
-    c
+    if mailable.is_a?(Event) && !waitlist
+      event_emails.count
+    else
+      to_with_unsubscribes_less_ab_tests.count
+    end
   end
 
   def to_with_unsubscribes_less_ab_tests
@@ -179,8 +196,8 @@ class Pmail
     # replace youtube.com links with embeds
     b.gsub(%r{<oembed url="https://www\.youtube\.com/watch\?v=(\w+)"></oembed>}) do |match|
       video_id = match.match(%r{<oembed url="https://www\.youtube\.com/watch\?v=(\w+)"></oembed>})[1]
-      title = Faraday.get("https://www.youtube.com/watch?v=#{video_id}").body.match(%r{<title>(.*)</title>})[1]
-      "<figure><a href=\"https://www.youtube.com/watch?v=#{video_id}\"><img src=\"#{ENV['BASE_URI']}/youtube_thumb/#{video_id}\"></a><figcaption>#{title.gsub('- YouTube', '')}</figcaption></figure>"
+      title = Yt::Video.new(id: video_id).title
+      "<figure><a href=\"https://www.youtube.com/watch?v=#{video_id}\"><img src=\"#{ENV['BASE_URI']}/youtube_thumb/#{video_id}\"></a><figcaption>#{title}</figcaption></figure>"
     end
   end
 
@@ -210,8 +227,8 @@ class Pmail
   def send_pmail
     return if sent_at
     return if pmail_test && pmail_test.winner
+    return unless (message_ids = send_batch_message)
 
-    message_ids = send_batch_message
     update_attribute(:sent_at, Time.now)
     update_attribute(:message_ids, message_ids)
   end
@@ -245,7 +262,20 @@ class Pmail
 
     end
 
-    batch_message.from from
+    from_name = (from.split('<').first.strip if from.include?('<'))
+    from_email = if from.include?('<')
+                   from.split('<').last.split('>').first
+                 else
+                   from
+                 end
+
+    if from_email && organisation.mailgun_domain == from_email.split('@').last
+      batch_message.from from
+    else
+      batch_message.from from_name ? "#{from_name} <#{ENV['MAILER_EMAIL']}>" : ENV['MAILER_EMAIL_FULL']
+      batch_message.reply_to from
+    end
+
     batch_message.subject(test_to ? "#{subject} [test sent #{Time.now}]" : subject)
     batch_message.body_html html
     batch_message.add_tag id
@@ -258,8 +288,9 @@ class Pmail
       accounts = to_with_unsubscribes.and(:id.in => pmail_testship.account_ids)
     else
       accounts = to_with_unsubscribes_less_ab_tests
-      if mailable.is_a?(Event)
-        mailable.tickets.complete.and(:email.ne => nil).each do |ticket|
+      if mailable.is_a?(Event) && !waitlist
+        emails = to_with_unsubscribes_less_ab_tests.pluck(:email)
+        mailable.tickets.complete.and(:email.ne => nil).reject { |ticket| emails.include?(ticket.email) }.each do |ticket|
           batch_message.add_recipient(:to, ticket.email, {
                                         'firstname' => ticket.firstname || 'there',
                                         'footer_class' => 'd-none'
@@ -294,6 +325,7 @@ class Pmail
       organisation: organisation,
       event: event,
       activity: activity,
+      local_group: local_group,
       account: account
     )
   end
@@ -301,12 +333,13 @@ class Pmail
   def self.new_hints
     {
       from: "In the form <em>Maria Sabina &lt;maria.sabina@#{ENV['DOMAIN']}&gt;</em>",
-      link_params: 'For example: utm_source=newsletter&utm_medium=email&utm_campaign=launch'
+      link_params: 'For example: utm_source=newsletter&utm_medium=email&utm_campaign=launch',
+      preview_text: 'Appears alongside the subject line in some email clients'
     }
   end
 
   def self.edit_hints
-    new_hints
+    {}.merge(new_hints)
   end
 
   def self.human_attribute_name(attr, options = {})
@@ -314,6 +347,7 @@ class Pmail
       to_option: 'To',
       event_id: 'Exclude people attending this event',
       activity_id: 'Exclude people attending upcoming events in this activity',
+      local_group_id: 'Exclude people in this local group',
       link_params: 'Parameters to add to links'
     }[attr.to_sym] || super
   end

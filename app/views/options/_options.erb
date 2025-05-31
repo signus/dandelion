@@ -14,10 +14,10 @@
   <% Option.types.each { |type| if (options = @gathering.options.and(type: type)).count > 0 %>
   <tr class="bg-white">
     <td colspan="5">
-      <h3 class="mb-0"><i class="fa <%= Option.icon(type) %>"></i> <%= %w[Tier Extra].include?(type) ? type.pluralize : type %></h3>
+      <h3 class="mb-0"><i class="bi <%= Option.icon(type) %>"></i> <%= %w[Tier Extra].include?(type) ? type.pluralize : type %></h3>
     </td>
   </tr>
-  <% options.order('cost asc, name asc').each { |option| %>
+  <% options.order('order asc, cost asc, name asc').each { |option| %>
   <tr>
     <td>
       <strong>
@@ -81,7 +81,7 @@
           <%= pluralize option.optionships.count, 'person' %>
         <% else %>
           <% y = [] %>
-          <% option.optionships.shuffle.each { |optionship| account = optionship.account; %>
+          <% option.optionships.order('created_at asc').each { |optionship| account = optionship.account; %>
           <% if params[:view] == 'names' %>
             <% y << capture do %>
               <% if @membership.admin? %>
@@ -95,7 +95,7 @@
           <% else %>
             <% y << capture do %>
               <% if @membership.admin? %>
-                <a class="mr-1" href="/g/<%= @gathering.slug %>/optionships/<%= optionship.id %>/edit"><img data-toggle="tooltip" title="<%== Sanitize.fragment(account.name) %>" style="width: 50px;" src="<%= u account.picture_thumb_or_gravatar_url %>"></a>
+                <a class="mr-1" href="/g/<%= @gathering.slug %>/optionships/<%= optionship.id %>/edit"><img data-toggle="tooltip" title="<%== Sanitize.fragment(account.name) %>" style="width: 50px;" src="<%= u account.image_thumb_or_gravatar_url %>"></a>
               <% else %>
                 <%= partial :'accounts/square', locals: { account: account, width: '50px' } %>
               <% end %>

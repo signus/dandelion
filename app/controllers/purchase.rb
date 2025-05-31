@@ -39,6 +39,7 @@ Dandelion::App.controller do
         opt_in_organisation: detailsForm[:account][:opt_in_organisation] == '1' || (detailsForm[:account][:opt_in_organisation].is_a?(Array) && detailsForm[:account][:opt_in_organisation].include?('1')),
         opt_in_facilitator: detailsForm[:account][:opt_in_facilitator].is_a?(Array) && detailsForm[:account][:opt_in_facilitator].include?('1'),
         hear_about: detailsForm[:account][:hear_about],
+        via: detailsForm[:account][:via],
         gc_plan_id: detailsForm[:account][:gc_plan_id],
         gc_given_name: detailsForm[:account][:gc_given_name],
         gc_family_name: detailsForm[:account][:gc_family_name],
@@ -48,7 +49,8 @@ Dandelion::App.controller do
         gc_branch_code: detailsForm[:account][:gc_branch_code],
         gc_account_number: detailsForm[:account][:gc_account_number],
         http_referrer: detailsForm[:account][:http_referrer],
-        answers: (detailsForm[:answers].map { |i, x| [@event.questions_a[i.to_i], x] } if detailsForm[:answers])
+        answers: (detailsForm[:answers].map { |i, x| [@event.questions_a[i.to_i], x] } if detailsForm[:answers]),
+        application_fee_paid_to_dandelion: !@event.revenue_sharer_organisationship && @event.donations_to_dandelion?
       )
 
       ticketForm[:quantities].each do |ticket_type_id, quantity|
@@ -61,7 +63,9 @@ Dandelion::App.controller do
 
       @order.donations.create!(event: @event, account: @account, amount: ticketForm[:donation_amount]) if ticketForm[:donation_amount].to_f > 0
 
+      @order.filter_discounts if @order.discount_code && @order.discount_code.filter
       @order.apply_credit if current_account
+      @order.apply_fixed_discount
       @order.update_attribute(:original_description, @order.description)
     rescue StandardError => e
       airbrake_notify(e)
@@ -75,7 +79,11 @@ Dandelion::App.controller do
         case params[:detailsForm][:payment_method]
         when 'stripe'
 
-          Stripe.api_key = @event.organisation.stripe_sk
+          Stripe.api_key = if @event.organisation.stripe_connect_json
+                             ENV['STRIPE_SK']
+                           else
+                             @event.organisation.stripe_sk
+                           end
           Stripe.api_version = '2020-08-27'
 
           if ticketForm[:cohost] && (cohost = Organisation.find_by(slug: ticketForm[:cohost])) && (cohostship = @event.cohostships.find_by(organisation: cohost)) && cohostship.image
@@ -89,19 +97,23 @@ Dandelion::App.controller do
             success_url: URI::DEFAULT_PARSER.escape("#{ENV['BASE_URI']}/e/#{@event.slug}?success=true&order_id=#{@order.id}&utm_source=#{params[:detailsForm][:utm_source]}&utm_medium=#{params[:detailsForm][:utm_medium]}&utm_campaign=#{params[:detailsForm][:utm_campaign]}"),
             cancel_url: URI::DEFAULT_PARSER.escape("#{ENV['BASE_URI']}/e/#{@event.slug}?cancelled=true"),
             metadata: @order.metadata,
+            billing_address_collection: @event.organisation.billing_address_collection? ? 'required' : nil,
             line_items: [{
               name: @event.name,
               description: @order.description,
               images: [@event_image.try(:url)].compact,
               amount: (@order.total * 100).round,
               currency: @order.currency,
-              quantity: 1
+              quantity: 1,
+              tax_rates: @event.tax_rate_id || @event.organisation.tax_rate_id ? [@event.tax_rate_id || @event.organisation.tax_rate_id] : nil
             }]
           }
           payment_intent_data = {
             description: @order.description,
             metadata: @order.metadata
           }
+
+          application_fee_amount = nil
           if (organisationship = @event.revenue_sharer_organisationship)
             application_fee_amount = @order.calculate_application_fee_amount
             payment_intent_data.merge!({
@@ -110,16 +122,22 @@ Dandelion::App.controller do
                                            destination: organisationship.stripe_user_id
                                          }
                                        })
+          elsif @event.donations_to_dandelion?
+            application_fee_amount = @order.donation_revenue.cents.to_f / 100
+            payment_intent_data.merge!({
+                                         application_fee_amount: (application_fee_amount * 100).round
+                                       })
           end
+
           stripe_session_hash.merge!({
                                        payment_intent_data: payment_intent_data
                                      })
-          session = Stripe::Checkout::Session.create(stripe_session_hash)
+          session = Stripe::Checkout::Session.create(stripe_session_hash, @event.organisation.stripe_connect_json ? { stripe_account: @event.organisation.stripe_user_id } : {})
           @order.update_attributes!(
             value: @order.total.round(2),
             session_id: session.id,
             payment_intent: session.payment_intent,
-            application_fee_amount: (application_fee_amount if organisationship)
+            application_fee_amount: application_fee_amount
           )
           @order.tickets.each do |ticket|
             ticket.update_attributes!(
@@ -150,15 +168,6 @@ Dandelion::App.controller do
           )
           { checkout_id: checkout.id }.to_json
 
-        when 'seeds'
-
-          seeds_secret = Array.new(5) { [*'a'..'z', *'0'..'9'].sample }.join
-          @order.update_attributes!(
-            value: @order.total.round(2),
-            seeds_secret: seeds_secret
-          )
-          { seeds_secret: @order.seeds_secret, seeds_value: @order.seeds_value, order_id: @order.id.to_s, order_expiry: (@order.created_at + 1.hour).to_datetime.strftime('%Q') }.to_json
-
         when 'opencollective'
 
           oc_secret = "dandelion:#{Array.new(5) { [*'a'..'z', *'0'..'9'].sample }.join}"
@@ -170,7 +179,7 @@ Dandelion::App.controller do
 
         when 'evm'
 
-          evm_secret = Array.new(6) { [*'1'..'9'].sample }.join
+          evm_secret = Array.new(4) { [*'1'..'9'].sample }.join
           @order.update_attributes!(
             value: @order.total.round(2),
             evm_secret: evm_secret
@@ -186,6 +195,10 @@ Dandelion::App.controller do
         @order.create_order_notification
         { order_id: @order.id.to_s }.to_json
       end
+    rescue Stripe::InvalidRequestError => e
+      @order.notify_of_failed_purchase(e)
+      @order.destroy
+      halt 400
     rescue StandardError => e
       airbrake_notify(e, { order: @order })
       @order.destroy

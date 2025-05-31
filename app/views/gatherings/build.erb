@@ -2,13 +2,9 @@
   <%= partial :'gatherings/nav', locals: { gathering: @gathering, membership: @membership } %>
 <% end %>
 
-<% if @gathering.new_record? %>
-  <%= partial :'gatherings/explain', locals: {read_more: true} %>
-<% end %>
-
 <p>
   <a target="_blank" href="/docs/gatherings">
-    <i class="fa fa-question-circle"></i>
+    <i class="bi bi-question-circle-fill"></i>
     Need support? Check out the docs
   </a>
 </p>
@@ -17,7 +13,6 @@
   $(function () {
 
     $('#gathering_slug, #gathering_name').keyup(function () {
-      $('#slug-replace-gathering-url').text('<%= ENV['BASE_URI'] %>/g/' + $('#gathering_slug').val());
       $('#slug-replace-stripe-webhook').text('<%= ENV['BASE_URI'] %>/g/' + $('#gathering_slug').val() + '/stripe_webhook');
       $('#slug-replace-coinbase-webhook').text('<%= ENV['BASE_URI'] %>/g/' + $('#gathering_slug').val() + '/coinbase_webhook');
     }).keyup();
@@ -38,7 +33,15 @@
         var tabPane = this
         $('<a href="javascript:;" class="next btn btn-primary">Next</a>').appendTo(tabPane)
         $(this).find('a.next').click(function () {
-          $('#gathering-build-nav a[href="#' + $(tabPane).next().attr('id') + '"]').tab('show')
+          var nextTab = $(tabPane).next().attr('id')
+          $('#gathering-build-nav a[href="#' + nextTab + '"]').tab('show')
+
+          // Scroll the tab into view
+          var navWrapper = $('.nav-wrapper')[0]
+          var activeTab = $('#gathering-build-nav a[href="#' + nextTab + '"]')[0]
+          if (navWrapper && activeTab) {
+            navWrapper.scrollLeft = activeTab.offsetLeft - (navWrapper.clientWidth / 2) + (activeTab.clientWidth / 2)
+          }
         })
       })
       $('#tab5').find('a.next').remove()
@@ -114,28 +117,31 @@
   </div>
 <% end %>
 <% form_for @gathering, @gathering.new_record? ? '/g/new' : "/g/#{@gathering.slug}/edit", multipart: true do |f| %>
-  <ul id="gathering-build-nav" class="nav nav-tabs" role="tablist">
-    <li role="presentation" class="nav-item"><a class="nav-link active" href="#tab1" role="tab" data-toggle="tab">Basics</a></li>
-    <li role="presentation" class="nav-item"><a class="nav-link" href="#tab2" role="tab" data-toggle="tab">Joining</a></li>
-    <li role="presentation" class="nav-item"><a class="nav-link" href="#tab3" role="tab" data-toggle="tab">Welcome</a></li>
-    <li role="presentation" class="nav-item"><a class="nav-link" href="#tab4" role="tab" data-toggle="tab">Payments</a></li>
-    <li role="presentation" class="nav-item"><a class="nav-link" href="#tab5" role="tab" data-toggle="tab">Features</a></li>
-  </ul>
+  <div class="nav-wrapper">
+    <ul id="gathering-build-nav" class="nav nav-tabs" role="tablist">
+      <li role="presentation" class="nav-item"><a class="nav-link active" href="#tab1" role="tab" data-toggle="tab">Basics</a></li>
+      <li role="presentation" class="nav-item"><a class="nav-link" href="#tab2" role="tab" data-toggle="tab">Joining</a></li>
+      <li role="presentation" class="nav-item"><a class="nav-link" href="#tab3" role="tab" data-toggle="tab">Welcome</a></li>
+      <li role="presentation" class="nav-item"><a class="nav-link" href="#tab4" role="tab" data-toggle="tab">Payments</a></li>
+      <li role="presentation" class="nav-item"><a class="nav-link" href="#tab5" role="tab" data-toggle="tab">Features</a></li>
+    </ul>
+  </div>
   <div class="container">
     <div class="tab-content mt-3">
       <div role="tabpanel" class="tab-pane active" id="tab1">
         <%= f.text_block :name %>
-        <%= f.slug_block :slug %>
-        <p class="text-muted" style="margin-top: -0.75rem">Gathering URL:
-          <span id="slug-replace-gathering-url"></span>
-        </p>
+        <div class="slugify">
+          <%= f.shorturl_block :slug, stem: "#{ENV['BASE_URI']}/g/" %>
+        </div>
         <script>
           $(function () {
-            var autocomplete = new google.maps.places.Autocomplete($('#gathering_location')[0]);
-            $('#gathering_location').keydown(function (e) {
-              if (e.which == 13 && $('.pac-container:visible').length)
-                return false;
-            });
+            if (typeof google !== 'undefined') {
+              var autocomplete = new google.maps.places.Autocomplete($('#gathering_location')[0]);
+              $('#gathering_location').keydown(function (e) {
+                if (e.which == 13 && $('.pac-container:visible').length)
+                  return false;
+              });
+            }
           })
         </script>
         <%= f.text_block :location %>
@@ -194,7 +200,7 @@
       <div role="tabpanel" class="tab-pane" id="tab4">
         <% if !@gathering.stripe_sk && !@gathering.coinbase_api_key %>
           <div class="alert alert-warning">
-            <p class="m-0"><i class="fa fa-warning"></i> To accept payments, you must add either Stripe or Coinbase Commerce details.</p>
+            <p class="m-0"><i class="bi bi-exclamation-triangle-fill"></i> To accept payments, you must add either Stripe or Coinbase Commerce details.</p>
           </div>
         <% end %>
         <div class="card mb-3">
@@ -230,7 +236,6 @@
           </div>
           <div class="card-body pb-0">
             <%= f.text_block :evm_address %>
-            <%= f.text_block :seeds_username %>
           </div>
         </div>
       </div>
@@ -272,7 +277,9 @@
       </div>
     </div>
     <% if @gathering.persisted? %>
-      <%= f.submit_block destroy_url: "/g/#{@gathering.slug}/destroy" %>
+      <div class="ml-3">
+        <%= f.submit_block destroy_url: "/g/#{@gathering.slug}/destroy" %>
+      </div>
     <% end %>
   <% end %>
 </div>

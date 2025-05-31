@@ -1,6 +1,6 @@
 <%= partial :'organisations/nav', locals: { organisation: @organisation } %>
 
-<a href="/pmail_tests/new?<%= @scope %>" class="btn btn-primary"><i class="fa fa-bar-chart"></i> New A/B test</a>
+<a href="/pmail_tests/new?<%= @scope %>" class="btn btn-primary"><i class="bi bi-bar-chart-line-fill"></i> New A/B test</a>
 <table class="table table-hover table-striped mt-3">
   <thead>
     <tr>
@@ -20,7 +20,7 @@
       <td>
         <% if !(pmail_test.pmails.all? { |pmail| pmail.organisation == pmail_test.organisation } &&
             pmail_test.pmails.map(&:to_selected).uniq.count == 1) %>
-        <i class="fa fa-warning"></i> These emails have different lists!
+        <i class="bi bi-exclamation-triangle-fill"></i> These emails have different lists!
       <% else %>
         <%= partial :'pmails/to', locals: { pmail: pmail_test.pmails.first } %>
       <% end %>
@@ -31,7 +31,7 @@
     <td>
       <% if pmail_test.sent_at %>
         <a class="btn btn-primary mr-1 mb-1" href="<%= edit_url %>">
-          <i class="fa fa-check"></i> Sent
+          <i class="bi bi-check-lg"></i> Sent
         </a>
         <div class="mt-1">
           Queued for sending at <%= pmail_test.requested_send_at %> <br>
@@ -39,14 +39,14 @@
         </div>
       <% elsif pmail_test.requested_send_at %>
         <a class="btn btn-secondary mr-1 mb-1" href="<%= edit_url %>">
-          <i class="fa fa-spin fa-circle-o-notch"></i> Sending
+          <i class="bi bi-spin bi-arrow-repeat"></i> Sending
         </a>
         <div class="mt-1">
           Queued for sending at <%= pmail_test.requested_send_at %> <br>
         </div>
       <% else %>
         <a class="btn btn-secondary" href="<%= edit_url %>">
-          <i class="fa fa-edit"></i> Edit
+          <i class="bi bi-pencil-fill"></i> Edit
         </a>
         <div class="mt-1">
           Created at <%= pmail_test.created_at %><br>

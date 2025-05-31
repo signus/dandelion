@@ -26,18 +26,30 @@ Money.default_bank = Money::Bank::Uphold.new
 # eu_bank = EuCentralBank.new
 # Money.default_bank = eu_bank
 # eu_bank.update_rates
+
 Money.locale_backend = :currency
 Money.rounding_mode = BigDecimal::ROUND_HALF_EVEN
+
+if Padrino.env == :production
+  begin
+    MaxMinder.download
+  rescue StandardError => e
+    Airbrake.notify(e)
+  end
+end
 
 Time.zone = ENV['DEFAULT_TIME_ZONE']
 
 Airrecord.api_key = ENV['AIRTABLE_API_KEY']
 
-OpenAI.configure do |config|
-  config.access_token = ENV['OPENAI_API_KEY']
-end
+FARQUEST = Faraday.new(
+  url: 'https://build.far.quest/farcaster/v2',
+  headers: { 'Content-Type': 'application/json', 'API-KEY': ENV['FARQUEST_API_KEY'] }
+)
 
-PUSHER = Pusher::Client.new(app_id: ENV['PUSHER_APP_ID'], key: ENV['PUSHER_KEY'], secret: ENV['PUSHER_SECRET'], cluster: ENV['PUSHER_CLUSTER'], encrypted: true) if ENV['PUSHER_APP_ID']
+Yt.configure do |config|
+  config.api_key = ENV['YOUTUBE_API_KEY']
+end
 
 if ENV['GOOGLE_MAPS_API_KEY']
   Geocoder.configure(
@@ -50,4 +62,8 @@ if ENV['GOOGLE_MAPS_API_KEY']
   Timezone::Lookup.config(:google) do |c|
     c.api_key = ENV['GOOGLE_MAPS_API_KEY']
   end
+end
+
+OpenAI.configure do |config|
+  config.access_token = ENV['OPENAI_API_KEY']
 end

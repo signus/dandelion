@@ -1,39 +1,39 @@
-<p class="lead">
-  <a href="/books">
-    &larr; All books
-  </a>
-</p>
+<%= partial :nav_library %>
+
+<style>
+  .book-summary {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+</style>
 
 <div class="row justify-content-center">
   <div class="col-6 col-lg-3">
 
-    <a href="/books/<%=@book.slug%>">
-      <img src="<%= @book.image.url %>" class="w-100 mb-3">
+    <a target="_blank" href="https://www.goodreads.com/book/show/<%=@book['Book Id']%>">
+      <img src="<%= @book['Cover image'][0]['url'] %>" class="w-100 mb-3">
     </a>
 
   </div>
   <div class="col-lg-9">
 
-    <h2>Chapter summaries</h2>
+    <h2 class="mb-3">
+      <%=@book['Title']%>
+      <br / >
+      <small class="text-muted">
+        by <%=[@book['Author'],@book['Additional Authors']].select { |a| !a.blank? }.to_sentence%></small>
+    </h2>
 
-    <% if (parts = @book.parts) %>
-      <% parts.each { |part| %>
-      <h3>Part <%=part%></h3>
-      <big>
-        <ol>
-          <% @book.book_chapters.and(:number => /^#{part}\./).sorted.each { |book_chapter| %>
-          <li><a href="/books/<%=@book.slug%>/<%=book_chapter.number%>"><%=book_chapter.name%></a></li>
-          <% } %>
-        </ol>
-      </big>
-      <% } %>
-    <% else %>
-      <big>
-        <ol>
-          <% @book.book_chapters.sorted.each { |book_chapter| %>
-          <li><a href="/books/<%=@book.slug%>/<%=book_chapter.number%>"><%=book_chapter.name%></a></li>
-          <% } %>
-        </ol>
-      </big>
-    <% end %>
+    <div class="book-summary">
+
+      <p>
+        <a target="_blank" href="https://www.goodreads.com/book/show/<%=@book['Book Id']%>">
+          Goodreads
+        </a>
+      </p>
+
+      <%== md(@book['Summary'].split("\n\n")[1..-1].join("\n\n"), hard_wrap: true) %>
+    </div>
+
   </div>
+</div>

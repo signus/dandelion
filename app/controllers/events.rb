@@ -5,17 +5,25 @@ Dandelion::App.controller do
   end
 
   get '/events', provides: %i[html ics] do
-    @events = Event.live.public.legit
+    @events = Event.live.public.browsable
     @from = params[:from] ? parse_date(params[:from]) : Date.today
     @to = params[:to] ? parse_date(params[:to]) : nil
-    @events = params[:order] == 'created_at' ? @events.order('created_at desc') : @events.order('start_time asc')
+    @events = case params[:order]
+              when 'created_at'
+                @events.order('created_at desc')
+              when 'featured'
+                @events.order('boosted desc, start_time asc')
+              else
+                @events.order('start_time asc')
+              end
     @events = if params[:q]
                 @events.and(:id.in => search_events(params[:q]).pluck(:id))
-              elsif params[:search]
-                @events
               else
-                @events.and(:organisation_id.in => Organisation.and(paid_up: true).pluck(:id))
+                @events
               end
+    if params[:near] && (center = Geocoder.coordinates(params[:near]))
+      @events = @events.and(coordinates: { '$geoWithin' => { '$center' => [center.reverse, 50 / 111.319] } })
+    end
     @events = @events.and(:id.in => EventTagship.and(event_tag_id: params[:event_tag_id]).pluck(:event_id)) if params[:event_tag_id]
     %i[organisation activity local_group].each do |r|
       @events = @events.and("#{r}_id": params[:"#{r}_id"]) if params[:"#{r}_id"]
@@ -28,6 +36,15 @@ Dandelion::App.controller do
     when :html
       @events = @events.future(@from)
       @events = @events.and(:start_time.lt => @to + 1) if @to
+      if params[:order] == 'random'
+        event_ids = @events.pluck(:id)
+        @events = @events.collection.aggregate([
+                                                 { '$match' => { '_id' => { '$in' => event_ids } } },
+                                                 { '$sample' => { size: event_ids.length } }
+                                               ]).map do |hash|
+          Event.new(hash.select { |k, _v| Event.fields.keys.include?(k.to_s) })
+        end
+      end
       if request.xhr?
         if params[:display] == 'map'
           @lat = params[:lat]
@@ -74,6 +91,7 @@ Dandelion::App.controller do
 
   get '/events/new' do
     sign_in_required!(redirect_url: '/accounts/new?list_an_event=1')
+    @draft = current_account.drafts.find(params[:draft_id]) if params[:draft_id]
     @event = Event.new
     if params[:organisation_id]
       @event.organisation = Organisation.find(params[:organisation_id]) || not_found
@@ -91,29 +109,61 @@ Dandelion::App.controller do
         redirect '/events'
       end
     end
-    @event.location = 'Online'
-    @event.feedback_questions = 'Comments/suggestions'
-    @event.affiliate_credit_percentage = @event.organisation.affiliate_credit_percentage
-    @event.currency = @event.organisation.currency
-    @event.suggested_donation = 0
-    @event.coordinator = current_account
-    @event.refund_deleted_orders = true
-    @event.ask_hear_about = true
-    @event.include_in_parent = true if organisation_admin?(@event.organisation)
-    erb :'events/build'
+
+    if Padrino.env == :production && !@event.organisation.stripe_client_id && @event.organisation.stripe_sk && !@event.organisation.stripe_connect_json
+      @organisation = @event.organisation
+      erb :'events/stripe_connect'
+    elsif @event.organisation.stripe_client_id && !@event.organisation.paid_up
+      redirect "/o/#{@event.organisation.slug}/contribute"
+    else
+      @event.location = 'Online'
+      @event.feedback_questions = 'Comments/suggestions'
+      @event.affiliate_credit_percentage = @event.organisation.affiliate_credit_percentage
+      @event.currency = @event.organisation.currency
+      @event.suggested_donation = 0
+      @event.coordinator = current_account
+      @event.refund_deleted_orders = true
+      @event.opt_in_organisation = true
+      @event.opt_in_facilitator = true
+      @event.ask_hear_about = true
+      @event.include_in_parent = true if organisation_admin?(@event.organisation)
+      erb :'events_build/build'
+    end
   end
 
   post '/events/new' do
     sign_in_required!
     @event = Event.new(mass_assigning(params[:event], Event))
+    unless @event.organisation
+      flash[:error] = 'There was an error saving the event'
+      if current_account.organisations.count == 0
+        redirect '/o/new'
+      else
+        redirect '/events'
+      end
+    end
     @event.account = current_account
     @event.last_saved_by = current_account
     if @event.save
+      @event.set(locked: true) if !@event.organisation.payment_method? && @event.paid_tickets?
       redirect "/e/#{@event.slug}?created=1"
     else
       flash.now[:error] = 'There was an error saving the event'
-      erb :'events/build'
+      erb :'events_build/build'
     end
+  end
+
+  post '/events/draft' do
+    sign_in_required!
+    current_account.drafts.create(model: 'Event', name: params[:event][:name], url: request.referer, json: params[:event].to_json)
+    200
+  end
+
+  get '/drafts/:id/destroy' do
+    sign_in_required!
+    draft = current_account.drafts.find(params[:id]) || not_found
+    draft.destroy
+    200
   end
 
   get '/events/:id', provides: %i[html ics json] do
@@ -129,6 +179,10 @@ Dandelion::App.controller do
     session[:via] = params[:via] if params[:via]
     session[:return_to] = request.url
     @event = Event.find_by(slug: params[:slug])
+    if !@event && params[:slug] =~ /[A-Z]/
+      @event = Event.find_by(slug: params[:slug].downcase)
+      redirect "/e/#{@event.slug}" if @event
+    end
     unless @event
       id = params[:slug]
       @event = Event.find(id) || not_found
@@ -137,7 +191,7 @@ Dandelion::App.controller do
     @order = Order.find(params[:order_id]) || not_found if params[:order_id]
     @og_desc = when_details(@event)
     kick! unless @event.organisation
-    kick!(redirect_url: "/o/#{@event.organisation.slug}/events") if @event.draft? && !event_admin?
+    kick!(redirect_url: "/o/#{@event.organisation.slug}/events") if @event.locked? && !event_admin?
     @title = @event.name
     @organisation = @event.organisation
     if @order && params[:success]
@@ -156,7 +210,7 @@ Dandelion::App.controller do
       @event_image = @event.image.thumb('1920x1920')
       @og_image = @event.image.thumb('1920x1920').url
     elsif @event.organisation && @event.organisation.image
-      @og_image = @event.organisation.image.url
+      @og_image = @event.organisation.image.thumb('1920x1920').url
     end
     @event_video = @event.video if @event.video
     @event_video = cohostship.video if cohostship && cohostship.video
@@ -170,7 +224,7 @@ Dandelion::App.controller do
       end
 
       if params[:ticket_form_only]
-        partial :'events/purchase', layout: :minimal
+        partial :'purchase/purchase', layout: :minimal
       else
         erb :'events/event'
       end
@@ -186,11 +240,16 @@ Dandelion::App.controller do
         discounted_ticket_revenue: @event.discounted_ticket_revenue.cents.to_f / 100,
         organisation_discounted_ticket_revenue: @event.organisation_discounted_ticket_revenue.cents.to_f / 100,
         donation_revenue: @event.donation_revenue.cents.to_f / 100,
-        organisation_revenue_share: @event.organisation_revenue_share
+        organisation_revenue_share: (@event.organisation_revenue_share if @event.revenue_sharer)
       }.to_json
     when :ics
       @event.ical.to_ical
     end
+  end
+
+  get '/event_sessions/:id', provides: %i[ics] do
+    @event_session = EventSession.find(params[:id]) || not_found
+    @event_session.ical.to_ical
   end
 
   get '/events/:id/progress' do
@@ -199,35 +258,32 @@ Dandelion::App.controller do
     partial :'events/progress', locals: { event: @event, full_width: params[:full_width] }
   end
 
-  get '/events/:id/page_views_count' do
-    @event = Event.find(params[:id]) || not_found
-    partial :'events/page_views_count', locals: { event: @event }
-  end
-
   get '/events/:id/stats_row' do
-    @event = Event.find(params[:id]) || not_found
-    @organisation = params[:organisation_id] ? Organisation.find(params[:organisation_id]) : nil
+    @event = Event.unscoped.find(params[:id]) || not_found
+    @organisation = Organisation.find(params[:organisation_id]) || not_found
     event_admins_only!
-    cp(:'events/event_stats_row', locals: { event: @event, organisation: @organisation }, key: "/events/#{@event.id}/stats_row?timezone=#{@event.start_time.strftime('%Z')}#{"&organisation_id=#{@organisation.id}" if @organisation}")
+    cp(:'events/event_stats_row', locals: { event: @event, organisation: @organisation, event_revenue_admin: event_revenue_admin? }, key: "/events/#{@event.id}/stats_row?timezone=#{@event.start_time.strftime('%Z')}&organisation_id=#{@organisation.id}&event_revenue_admin=#{event_revenue_admin? ? 1 : 0}")
   end
 
   get '/events/:id/edit' do
-    @event = Event.find(params[:id]) || not_found
+    @event = Event.unscoped.find(params[:id]) || not_found
     kick! unless @event.organisation
     event_admins_only!
-    erb :'events/build'
+    erb :'events_build/build'
   end
 
   post '/events/:id/edit' do
     @event = Event.find(params[:id]) || not_found
+    kick! unless @event.organisation
     event_admins_only!
     @event.last_saved_by = current_account
     if @event.update_attributes(mass_assigning(params[:event], Event))
+      @event.set(locked: true) if !@event.organisation.payment_method? && @event.paid_tickets?
       flash[:notice] = 'The event was saved.'
       redirect "/events/#{@event.id}/edit"
     else
       flash.now[:error] = 'There was an error saving the event.'
-      erb :'events/build'
+      erb :'events_build/build'
     end
   end
 
@@ -243,7 +299,7 @@ Dandelion::App.controller do
     organisation_admins_only!
     @event.update_attribute(:refund_deleted_orders, false) if params[:no_refunds]
     @event.send_destroy_notification(current_account)
-    @event.destroy!
+    @event.destroy
     flash[:notice] = 'The event was deleted.'
     redirect "/o/#{@event.organisation.slug}/events"
   end
@@ -251,48 +307,15 @@ Dandelion::App.controller do
   get '/events/:id/duplicate' do
     @event = Event.find(params[:id]) || not_found
     event_admins_only!
-    erb :'events/duplicate'
-  end
-
-  post '/events/:id/duplicate' do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    duplicated_event = @event.duplicate!(current_account)
-    flash[:notice] = 'Event duplicated as a draft'
-    redirect "/events/#{duplicated_event.id}/edit"
-  end
-
-  get '/events/:id/check_in' do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    erb :'events/check_in'
-  end
-
-  get '/events/:id/check_in_toggle/:ticket_id' do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    ticket = @event.tickets.complete.find(params[:ticket_id])
-    partial :'events/check_in_toggle', locals: { ticket: ticket }
-  end
-
-  post '/events/:id/check_in/:ticket_id' do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    ticket = @event.tickets.complete.find(params[:ticket_id])
-    if !ticket
-      403
-    elsif params[:checked_in] && ticket.checked_in
-      409
-    elsif !params[:checked_in] && !ticket.checked_in
-      409
+    if Padrino.env == :production && !@event.organisation.stripe_client_id && @event.organisation.stripe_sk && !@event.organisation.stripe_connect_json
+      @organisation = @event.organisation
+      erb :'events/stripe_connect'
+    elsif @event.organisation.stripe_client_id && !@event.organisation.paid_up
+      redirect "/o/#{@event.organisation.slug}/contribute"
     else
-      if params[:checked_in]
-        ticket.update_attribute(:checked_in, true)
-        ticket.update_attribute(:checked_in_at, Time.now)
-      else
-        ticket.update_attribute(:checked_in, nil)
-      end
-      ticket.account ? ticket.account.name : ''
+      duplicated_event = @event.duplicate!(current_account)
+      flash[:notice] = 'Event duplicated and locked'
+      redirect "/events/#{duplicated_event.id}/edit"
     end
   end
 
@@ -317,68 +340,37 @@ Dandelion::App.controller do
     Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
   end
 
-  get '/orders/:id', provides: %i[html pdf ics] do
-    @order = Order.find(params[:id]) || not_found
-    @event = @order.event
+  get '/events/:id/reminder_email' do
+    @event = Event.find(params[:id]) || not_found
+    event_admins_only!
+    erb :'events/reminder_email'
+  end
+
+  get '/events/:id/reminder_email_preview' do
+    @event = Event.find(params[:id]) || not_found
+    event_admins_only!
     event = @event
-    order = @order
-    account = @order.account
-    pdf_link = true
-    content = ERB.new(File.read(Padrino.root('app/views/emails/tickets.erb'))).result(binding)
-                 .gsub('%recipient.firstname%', @order.account.firstname)
-                 .gsub('%recipient.token%', @order.account.sign_in_token)
-
-    header_image_url = if event.organisation.send_ticket_emails_from_organisation && event.organisation.reply_to && event.organisation.image
-                         event.organisation.image.url
-                       else
-                         "#{ENV['BASE_URI']}/images/black-on-transparent-sq.png"
-                       end
-
-    case content_type
-    when :html
-      Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
-    when :ics
-      @event.ical(order: @order).to_ical
-    when :pdf
-      order.tickets_pdf.render
-    end
+    content = ERB.new(File.read(Padrino.root('app/views/emails/reminder.erb'))).result(binding)
+                 .gsub('%recipient.firstname%', current_account.firstname)
+                 .gsub('%recipient.token%', current_account.sign_in_token)
+    Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
   end
 
-  get '/orders/:id/send_tickets' do
-    @order = Order.find(params[:id])
-    @event = @order.event
+  get '/events/:id/feedback_request_email' do
+    @event = Event.find(params[:id]) || not_found
     event_admins_only!
-    @order.send_tickets
-    flash[:notice] = 'The tickets for the order were resent.'
-    redirect back
+    erb :'events/feedback_request_email'
   end
 
-  get '/orders/:id/transfer' do
-    @order = Order.find(params[:id])
-    @event = @order.event
+  get '/events/:id/feedback_request_email_preview' do
+    @event = Event.find(params[:id]) || not_found
     event_admins_only!
-    erb :'events/transfer_order'
-  end
-
-  post '/orders/:id/transfer' do
-    @order = Order.find(params[:id])
-    @event = @order.event
-    @organisation = @event.organisation
-    original_event_id = @order.event_id
-    event_admins_only!
-    new_event = @event.organisation.events.find(params[:order][:event_id]) || not_found
-    halt 400 unless event_admin?(new_event)
-    @order.update_attribute(:event, new_event)
-    @order.tickets.each do |ticket|
-      ticket.update_attribute(:event, new_event)
-      ticket.update_attribute(:ticket_type, nil)
-    end
-    @order.donations.each do |donation|
-      donation.update_attribute(:event, new_event)
-    end
-    @order.send_tickets
-    flash[:notice] = 'The order was transferred.'
-    redirect "/events/#{original_event_id}/orders"
+    event = @event
+    content = ERB.new(File.read(Padrino.root('app/views/emails/feedback.erb'))).result(binding)
+                 .gsub('%recipient.firstname%', current_account.firstname)
+                 .gsub('%recipient.token%', current_account.sign_in_token)
+                 .gsub('%recipient.id%', current_account.id)
+    Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
   end
 
   post '/events/:id/waitship/new' do
@@ -386,7 +378,7 @@ Dandelion::App.controller do
 
     if ENV['RECAPTCHA_SECRET_KEY']
       agent = Mechanize.new
-      captcha_response = JSON.parse(agent.post('https://www.google.com/recaptcha/api/siteverify', { secret: ENV['RECAPTCHA_SECRET_KEY'], response: params['g-recaptcha-response'] }).body)
+      captcha_response = JSON.parse(agent.post(ENV['RECAPTCHA_VERIFY_URL'], { secret: ENV['RECAPTCHA_SECRET_KEY'], response: params['g-recaptcha-response'] }).body)
       unless captcha_response['success'] == true
         flash[:error] = "Our systems think you're a bot. Please email #{ENV['CONTACT_EMAIL']} if you keep having trouble."
         redirect(back)
@@ -400,13 +392,14 @@ Dandelion::App.controller do
                else
                  Account.new(account_hash)
                end
-    if if @account.persisted?
-         @account.update_attributes(mass_assigning(account_hash.map { |k, v| [k, v] if v }.compact.to_h, Account))
-       else
-         @account.save
-       end
+    successful_update_or_save = if @account.persisted?
+                                  @account.update_attributes(mass_assigning(account_hash.map { |k, v| [k, v] if v }.compact.to_h, Account))
+                                else
+                                  @account.save
+                                end
+    if successful_update_or_save
       waitship = @event.waitships.create(account: @account)
-      if waitship.persisted?
+      if @event.waitships.find_by(account: @account)
         redirect "/e/#{@event.slug}?added_to_waitlist=true"
       else
         flash[:error] = waitship.errors.full_messages.join('; ')
@@ -415,77 +408,6 @@ Dandelion::App.controller do
     else
       flash[:error] = @account.errors.full_messages.join('; ')
       redirect "/e/#{@event.slug}"
-    end
-  end
-
-  get '/events/:id/tickets', provides: %i[html csv pdf] do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    @tickets = if params[:ticket_type_id]
-                 tt = @event.ticket_types.find(params[:ticket_type_id]) || not_found
-                 tt.tickets
-               elsif params[:ticket_group_id]
-                 tg = @event.ticket_groups.find(params[:ticket_group_id]) || not_found
-                 tg.tickets
-               else
-                 @event.tickets
-               end
-    @tickets =  @tickets.deleted if params[:deleted]
-    @tickets =  @tickets.complete if params[:complete]
-    @tickets =  @tickets.incomplete if params[:incomplete]
-    if params[:q]
-      @tickets = @tickets.and(:id.in =>
-        Ticket.collection.aggregate([
-                                      { '$addFields' => { 'id' => { '$toString' => '$_id' } } },
-                                      { '$match' => { 'id' => { '$regex' => /#{Regexp.escape(params[:q])}/i } } }
-                                    ]).pluck(:id) +
-        Ticket.and(
-          :account_id.in => search_accounts(params[:q]).pluck(:id)
-        ).pluck(:id))
-    end
-    case content_type
-    when :html
-      if request.xhr?
-        partial :'events/tickets_table', locals: { tickets: @tickets }
-      else
-        erb :'events/tickets'
-      end
-    when :csv
-      CSV.generate do |csv|
-        csv << %w[name email ordered_for_name ordered_for_email ticket_type price currency created_at checked_in_at]
-        @tickets.each do |ticket|
-          csv << [
-            ticket.account ? ticket.account.name : '',
-            ticket.account && ticket_email_viewer?(ticket) ? ticket.account.email : '',
-            ticket.name,
-            ticket_email_viewer?(ticket) ? ticket.email : '',
-            ticket.ticket_type.try(:name),
-            ticket.discounted_price,
-            ticket.currency,
-            ticket.created_at.to_fs(:db_local),
-            ticket.checked_in_at ? ticket.checked_in_at.to_fs(:db_local) : ''
-          ]
-        end
-      end
-    when :pdf
-      @tickets = @tickets.sort_by { |ticket| ticket.account ? ticket.account.name : '' }
-      Prawn::Document.new(page_layout: :landscape) do |pdf|
-        pdf.font "#{Padrino.root}/app/assets/fonts/PlusJakartaSans/ttf/PlusJakartaSans-Regular.ttf"
-        pdf.table([%w[name email ordered_for_name ordered_for_email ticket_type price currency created_at checked_in_at]] +
-            @tickets.map do |ticket|
-              [
-                ticket.account ? ticket.account.name_transliterated : '',
-                ticket.account && ticket_email_viewer?(ticket) ? ticket.account.email : '',
-                (I18n.transliterate(ticket.name) if ticket.name),
-                ticket_email_viewer?(ticket) ? ticket.email : '',
-                ticket.ticket_type.try(:name),
-                ticket.discounted_price,
-                ticket.currency,
-                ticket.created_at.to_fs(:db_local),
-                ticket.checked_in_at ? ticket.checked_in_at.to_fs(:db_local) : ''
-              ]
-            end)
-      end.render
     end
   end
 
@@ -518,99 +440,21 @@ Dandelion::App.controller do
     redirect "/events/#{@event.id}/tickets"
   end
 
-  get '/events/:id/orders/:order_id/payment_completed', provides: :json do
-    @event = Event.find(params[:id]) || not_found
-    @order = @event.orders.find(params[:order_id]) || not_found
-    @event.organisation.check_seeds_account if @order.seeds_secret && @event.organisation.seeds_username
-    @event.organisation.check_evm_account if @order.evm_secret && @event.organisation.evm_address
-    @event.check_oc_event if @order.oc_secret && @event.oc_slug
-    { id: @order.id.to_s, payment_completed: @order.payment_completed }.to_json
-  end
-
-  get '/events/:id/orders/:order_id/destroy' do
+  get '/events/:id/stripe_charges' do
     @event = Event.find(params[:id]) || not_found
     event_admins_only!
-    @event.orders.find(params[:order_id]).try(:destroy)
-    redirect back
-  end
+    @stripe_charges = @event.stripe_charges.and(:balance_transaction.ne => nil)
+    @stripe_charges = @stripe_charges.and(:account_id.in => search_accounts(params[:q]).pluck(:id)) if params[:q]
 
-  get '/events/:id/orders/:order_id/restore_and_complete' do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    @event.orders.deleted.find(params[:order_id]).restore_and_complete
-    redirect back
-  end
-
-  get '/events/:id/tickets/:ticket_id/destroy' do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    ticket = @event.tickets.find(params[:ticket_id]) || not_found
-    ticket.refund
-    ticket.destroy
-    redirect back
-  end
-
-  get '/events/:id/orders', provides: %i[html csv pdf] do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    @orders = @event.orders
-    @orders =  @orders.deleted if params[:deleted]
-    @orders =  @orders.complete if params[:complete]
-    @orders =  @orders.incomplete if params[:incomplete]
-    @orders = @orders.and(:account_id.in => search_accounts(params[:q]).pluck(:id)) if params[:q]
-
-    case content_type
-    when :html
-      if request.xhr?
-        partial :'events/orders_table', locals: { orders: @orders, show_emails: event_email_viewer? }
-      else
-        erb :'events/orders'
-      end
-    when :csv
-      CSV.generate do |csv|
-        csv << %w[name email value currency opt_in_organisation opt_in_facilitator hear_about answers created_at]
-        @orders.each do |order|
-          csv << [
-            order.account ? order.account.name : '',
-            if order_email_viewer?(order)
-              order.account ? order.account.email : ''
-            else
-              ''
-            end,
-            order.value,
-            order.currency,
-            order.opt_in_organisation,
-            order.opt_in_facilitator,
-            order.hear_about,
-            order.answers,
-            order.created_at.to_fs(:db_local)
-          ]
-        end
-      end
-    when :pdf
-      @orders = @orders.sort_by { |order| order.account.try(:name) || '' }
-      Prawn::Document.new do |pdf|
-        pdf.font "#{Padrino.root}/app/assets/fonts/PlusJakartaSans/ttf/PlusJakartaSans-Regular.ttf"
-        pdf.table([%w[name email value currency created_at]] +
-            @orders.map do |order|
-              [
-                order.account.name_transliterated,
-                if order_email_viewer?(order)
-                  order.account ? order.account.email : ''
-                else
-                  ''
-                end,
-                order.value,
-                order.currency,
-                order.created_at.to_fs(:db_local)
-              ]
-            end)
-      end.render
+    if request.xhr?
+      partial :'events/stripe_charges_table', locals: { stripe_charges: @stripe_charges, show_emails: event_email_viewer? }
+    else
+      erb :'events/stripe_charges'
     end
   end
 
   get '/events/:id/donations' do
-    @event = Event.find(params[:id]) || not_found
+    @event = Event.unscoped.find(params[:id]) || not_found
     event_admins_only!
     @donations = @event.donations
     @donations = @donations.and(:account_id.in => search_accounts(params[:q]).pluck(:id)) if params[:q]
@@ -629,12 +473,6 @@ Dandelion::App.controller do
     @waitships = @event.waitships
     @waitships = @waitships.and(:account_id.in => search_accounts(params[:q]).pluck(:id)) if params[:q]
     erb :'events/waitlist'
-  end
-
-  get '/events/:id/facilitators' do
-    @event = Event.find(params[:id]) || not_found
-    event_admins_only!
-    erb :'events/facilitators'
   end
 
   post '/events/:id/event_facilitations/new' do
@@ -769,22 +607,6 @@ Dandelion::App.controller do
     erb :'discount_codes/discount_codes'
   end
 
-  get '/events/:id/orders/:order_id/ticketholders/:ticket_id/:f' do
-    @event = Event.find(params[:id]) || not_found
-    @order = @event.orders.complete.find(params[:order_id]) || not_found
-    @ticket = @order.tickets.find(params[:ticket_id])
-    partial :"events/ticketholder_#{params[:f]}", locals: { ticket: @ticket }
-  end
-
-  post '/events/:id/orders/:order_id/ticketholders/:ticket_id/:f' do
-    @event = Event.find(params[:id]) || not_found
-    @order = @event.orders.complete.find(params[:order_id]) || not_found
-    @ticket = @order.tickets.find(params[:ticket_id]) || not_found
-    @ticket.send(:"#{params[:f]}=", params[params[:f]])
-    @ticket.save
-    200
-  end
-
   get '/events/:id/star' do
     sign_in_required!
     @event = Event.find(params[:id]) || not_found
@@ -804,36 +626,6 @@ Dandelion::App.controller do
     @event = Event.find(params[:id]) || not_found
     @event_star = @event.event_stars.find_by(account: current_account)
     @event_star.try(:destroy)
-    200
-  end
-
-  get '/tickets/:id/price' do
-    @ticket = Ticket.find(params[:id]) || not_found
-    @event = @ticket.event
-    event_admins_only!
-    partial :'events/ticket_price', locals: { ticket: @ticket }
-  end
-
-  post '/tickets/:id/price' do
-    @ticket = Ticket.find(params[:id]) || not_found
-    @event = @ticket.event
-    event_admins_only!
-    @ticket.update_attributes(price: params[:price])
-    200
-  end
-
-  get '/tickets/:id/ticket_type' do
-    @ticket = Ticket.find(params[:id]) || not_found
-    @event = @ticket.event
-    event_admins_only!
-    partial :'events/ticket_type', locals: { ticket: @ticket }
-  end
-
-  post '/tickets/:id/ticket_type' do
-    @ticket = Ticket.find(params[:id]) || not_found
-    @event = @ticket.event
-    event_admins_only!
-    @ticket.update_attributes(ticket_type_id: params[:ticket_type_id])
     200
   end
 

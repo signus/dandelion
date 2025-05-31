@@ -1,66 +1,113 @@
-<% unless @event  %>
+<script>
+  $(function() {
+    var scrollTimeout;  // Timeout variable to detect end of scrolling
+
+    $(window).scroll(function() {
+      clearTimeout(scrollTimeout);  // Clear the previous timeout
+      scrollTimeout = setTimeout(function() {  // Set a new timeout
+        // This code will only run after scrolling has stopped
+        if ($(window).scrollLeft() > $('#sidebar').width()) {
+          $('#sidebar').fadeOut();
+        } else {
+          $('#sidebar').fadeIn();
+        }
+      }, 100);  // Adjust timeout duration to suit your needs, 250ms is commonly used
+    });
+  });
+</script>
+
+<% if !@event  %>
   <style>
+    #event_stats th:first-child, #event_stats td:first-child { position: sticky; left: 0; width: 15em; min-width: 15em; max-width: 15em; z-index: 999 }
+    #event_stats td:first-child { border-right: 1px solid black }
+
+    #event_stats th:first-child { background: white }
+    #event_stats tr:nth-child(even) td:first-child { background-color: white }
+    #event_stats tr:nth-child(odd) td:first-child { background-color: #eee }
+
     #event_stats_filter label { font-weight: bold }
   </style>
   <script>
     $(function () {
-      var date = $("#event_stats th").toArray().indexOf($("th[data-col-name='date']")[0])
-      var ticketsSold = $("#event_stats th").toArray().indexOf($("th[data-col-name='tickets-sold']")[0])
-      var ticketRevenue = $("#event_stats th").toArray().indexOf($("th[data-col-name='ticket-revenue']")[0])
-      var donations = $("#event_stats th").toArray().indexOf($("th[data-col-name='donations']")[0])
+
+      var dateIndex = $("#event_stats th").toArray().indexOf($("th[data-col-name='date']")[0])
+
       $(document).ajaxStop(function() {
         if (!$('#event_stats').hasClass('dataTable')) {
           var table = $('#event_stats').dataTable({
             bInfo: false,
             paging: false,
-            order: [[date, "asc"]],
-            oLanguage: {
-              sSearch: "Search"
-            }
+            order: [[dateIndex, "asc"]],
+            searching: false
           })
           table.on('draw.dt', function() {
-            $.each([ticketsSold, ticketRevenue, donations], function(i,index) {
+            $("#event_stats th[data-sum], #event_stats th[data-money]").each(function() {
+              var index = $("#event_stats th").index(this);
               var sum = 0
               $('#event_stats tbody tr').each(function() {
-                sum += parseFloat($('td:eq('+index+')', this).attr('data-sort'))
+                var f = parseFloat($('td:eq('+index+')', this).attr('data-sort'))
+                if (isNaN(f))
+                  f = 0
+                sum += f
               })
-              if (i == 0)
-                $('tfoot th').eq(index).html(sum);
+              if ($(this).is('[data-money]'))
+                $('tfoot th').eq(index).html('<%= money_symbol(organisation.currency) %>' + sum.toLocaleString());
               else
-                $('tfoot th').eq(index).html('<%= Money.new(0, @organisation.currency).symbol %>' + sum.toLocaleString());
+                $('tfoot th').eq(index).html(sum);
             });
           })
           $('#event_stats').DataTable().draw();
         }
       })
+
     })
   </script>
 <% end %>
-<table id="event_stats" class="table table-striped table-hover table-sm" style="font-size: 0.9em">
-  <thead class="bg-white">
+
+<style>
+  #event_stats .pagelet-loading { font-size: 2em }
+</style>
+
+<table id="event_stats" class="table <% if @event %> table-responsive <% else %> table-striped table-hover <% end %> table-sm" style="font-size: 0.9em">
+  <thead>
     <tr>
       <th>Name</th>
-      <th></th>
+      <th data-orderable="false"></th>
       <th style="min-width: 12.5em" data-col-name="date">Date</th>
       <th>Coordinator</th>
-      <th>Organiser</th>
+      <% if organisation.stripe_client_id %>
+        <th>Organiser</th>
+      <% end %>
       <th>Facilitators</th>
       <th>Tags</th>
       <th>Activity</th>
       <th>Local group</th>
       <th>Facebook event</th>
       <th>30d views</th>
-      <th data-col-name="tickets-sold">Tickets sold</th>
+      <th data-sum>Tickets sold</th>
       <th>Checked in</th>
-      <th data-col-name="ticket-revenue">Ticket revenue</th>
-      <th>Credit due</th>
-      <th data-col-name="donations">Donations</th>
+      <th data-money>Ticket revenue</th>
+      <th data-money>Donations</th>
+      <% if organisation.stripe_client_id %>
+        <th data-money>Ticket revenue to revenue sharer</th>
+        <th data-money>Ticket revenue to organisation</th>
+        <th data-money>Revenue reported by Dandelion</th>
+        <th data-money>Revenue reported by Stripe (48h delay)</th>
+        <th data-money>Stripe fees</th>
+        <th data-money>Profit</th>
+        <th data-money>Profit less donations, before allocations</th>
+        <% Event.profit_share_roles.each do |role| %>
+          <th data-money>Allocated to <%= role.gsub('_',' ') %></th>
+        <% end %>
+        <th data-money>Profit less donations, after allocations</th>
+        <th data-money>Profit including donations, after allocations</th>
+        <th data-money>Remaining to be paid</th>
+      <% end %>
       <th>Feedback</th>
     </tr>
   </thead>
-  <% organisation = params[:cohost] ? Organisation.find_by(slug: params[:cohost]) : @organisation %>
   <% events.each { |event| %>
-  <tr data-pagelet-url="/events/<%= event.id %>/stats_row<%= "?timezone=#{event.start_time.strftime('%Z')}#{"&organisation_id=#{organisation.id}" if organisation}" %>"><% if @event %><%= cp(:'events/event_stats_row', locals: { event: @event, organisation: organisation }, key: "/events/#{@event.id}/stats_row?timezone=#{@event.start_time.strftime('%Z')}#{"&organisation_id=#{organisation.id}" if organisation}") %><% end %></tr>
+  <tr data-pagelet-url="<%=ENV['BASE_ADMIN_URI']%>/events/<%= event.id %>/stats_row<%= "?api_key=#{current_account.api_key}&timezone=#{event.start_time.strftime('%Z')}&organisation_id=#{organisation.id}&event_revenue_admin=#{event_revenue_admin?(event) ? 1 : 0}" %>"><% if @event %><%= cp(:'events/event_stats_row', locals: { event: @event, organisation: organisation, event_revenue_admin: event_revenue_admin? }, key: "/events/#{@event.id}/stats_row?timezone=#{@event.start_time.strftime('%Z')}&organisation_id=#{organisation.id}&event_revenue_admin=#{event_revenue_admin? ? 1 : 0}") %><% end %></tr>
   <% } %>
   <% unless @event %>
     <tfoot>
@@ -69,6 +116,9 @@
         <th></th>
         <th></th>
         <th></th>
+        <% if organisation.stripe_client_id %>
+          <th></th>
+        <% end %>
         <th></th>
         <th></th>
         <th></th>
@@ -79,8 +129,11 @@
         <th></th>
         <th></th>
         <th></th>
-        <th></th>
-        <th></th>
+        <% if organisation.stripe_client_id %>
+          <% 14.times do %>
+            <th></th>
+          <% end %>
+        <% end %>
         <th></th>
       </tr>
     </tfoot>

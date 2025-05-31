@@ -28,7 +28,7 @@ jobs:
         mongodb-version: 7.0
 
     - name: Cache gems
-      uses: actions/cache@v1
+      uses: actions/cache@v4
       with:
         path: vendor/bundle
         key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
@@ -55,6 +55,7 @@ jobs:
         STRIPE_PK: pk_test_hBG6G5aSlQWzUuSesRvMMj3v
         STRIPE_SK: sk_test_HCthlytw40KUFZ5nWNc0XI6A        
         CI: true
+        SKIP_TOURS: true
       run: bundle exec rake test
 
       

@@ -1,16 +1,14 @@
 <% viewer_in_network = current_account && @account.network.find(current_account.id) %>
 <%= partial :'accounts/top', locals: { account: @account } %>
-<% if current_account %>
-  <div class="mt-3" data-pagelet-url="/commentable?commentable_type=Account&commentable_id=<%= @account.id %>">
-    <%= partial :'comments/commentable', locals: { commentable: @account } %>
-  </div>
-<% end %>
+
+<%= cp(:'accounts/farcaster', key: "/accounts/#{@account.id}/farcaster", locals: { account: @account }) %>
+
 <% if (events = Event.and(:id.in => EventFacilitation.and(:account_id.in => [@account.id] + @account.following_starred.pluck(:id)).pluck(:event_id)).live.public.future_and_current_featured).count > 0 %>
   <h2 class="mt-5">Upcoming events <% if @account.following_starred.count > 0 %>featuring <%=@account.firstname%> and <%=@account.pronoun%> stars<% end %></h2>
   <%= partial :'events/blocks', locals: { events: events } %>
 <% end %>
 <% if @account.unscoped_event_feedbacks_as_facilitator.count > 0 %>
-  <h2 class="mt-5">Feedback on <%=@account.firstname%>'s events</h2>
+  <h2 id="feedback" class="mt-5">Feedback on <%=@account.firstname%>'s events</h2>
   <div class="mt-3" data-pagelet-url="/accounts/<%= @account.id %>/show_feedback"></div>
 <% end %>
 
@@ -75,30 +73,6 @@
       <% end %>
     </div>
     <div data-pagelet-url="/accounts/<%= @account.id %>/gatherings"></div>
-  <% end %>
-<% end %>
-
-<% if @account.places_following.count > 0 %>
-  <% if viewable?(@account, :places, viewer_in_network: viewer_in_network) %>
-    <div class="mt-5 row justify-content-between no-gutters">
-      <div class="col">
-        <h2>Places</h2>
-        <% if current_account && current_account.id == @account.id %>
-          <div class="mb-3">
-            <a class="btn btn-primary" href="javascript:;" onclick="$(this).hide().next().show().find('input').first().focus()"><i class="fa fa-plus-circle"></i> Add a category</a>
-            <div style="display: none" class="mt-3">
-              <%= partial :'placeship_categories/build' %>
-            </div>
-          </div>
-        <% end %>
-      </div>
-      <% if current_account && current_account.id == @account.id %>
-        <div class="col-auto">
-          <div data-pagelet-url="/accounts/privacyable/places"></div>
-        </div>
-      <% end %>
-    </div>
-    <div data-pagelet-url="/accounts/<%= @account.id %>/places"></div>
   <% end %>
 <% end %>
 

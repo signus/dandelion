@@ -13,12 +13,12 @@
       <div class="input-group">
         <%= text_field_tag :q, class: 'form-control', value: params[:q] %>
         <div class="input-group-append">
-          <button class="btn btn-primary"><i class="fa fa-search"></i></button>
+          <button class="btn btn-primary"><i class="bi bi-search"></i></button>
         </div>
       </div>
     <% end %>
   </div>
-  <div class="col-auto">
+  <div class="col-12 ml-2 mt-3 col-lg-auto ml-lg-0 mt-lg-0">
     <% if organisation_admin? %>
       <a class="btn btn-primary mr-2" href="/local_groups/new?organisation_id=<%= @organisation.id %>">Create a local group</a>
     <% end %>

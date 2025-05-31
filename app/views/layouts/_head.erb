@@ -3,131 +3,46 @@
   <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
   <link rel="manifest" href="/manifest.json">
 
-  <% if !params[:minimal] && Padrino.env == :production %>
-    <script
+  <% if Padrino.env == :production %>
+    <% if !params[:minimal] && !params[:ticket_form_only] %>
+      <script
       type="text/javascript"
-      src="https://app.termly.io/embed.min.js"
-      data-auto-block="on"
-      data-website-uuid="e3781b47-56e6-4a03-987b-1ce448a36930"
+      src="https://app.termly.io/resource-blocker/<%=ENV["TERMLY_WEBSITE_UUID"]%>?autoBlock=on"
       ></script>
+    <% end %>
+
+    <%= partial :'layouts/ga' %>
+    <%= partial :'layouts/pixel' %>
+
+    <% if current_account && ENV['NOLT_SSO_SECRET'] %>
+      <script async src="https://cdn.nolt.io/widgets.js"></script>
+      <script>
+        window.noltQueue=window.noltQueue||[];function nolt(){noltQueue.push(arguments)}
+      </script>
+      <script>
+        nolt('identify', { jwt: '<%= generate_nolt_token %>' });
+      </script>
+    <% end %>
   <% end %>
 
-  <%= partial :'layouts/ga' %>
-  <%= partial :'layouts/pixel' %>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
-
-  <link href="/fonts/fontawesome5/css/all.min.css" rel="stylesheet">
-  <link href="/infinite_admin/plugins/icon/font-awesome/css/font-awesome.min.css" rel="stylesheet">
-  <link href="/infinite_admin/plugins/icon/themify-icons/themify-icons.css" rel="stylesheet">
-
-  <link href="/infinite_admin/plugins/bootstrap/bootstrap4/css/bootstrap.css" rel="stylesheet">
-  <link href="/infinite_admin/plugins/animate/animate.min.css" rel="stylesheet">
-
-  <% if Padrino.env == :production %>
-    <script src="https://js.pusher.com/4.0/pusher.min.js"></script>
-    <script>
-      if(typeof Pusher != 'undefined') {
-        <% if Padrino.env == :development %>
-          Pusher.logToConsole = true;
-        <% end %>
-        pusher = new Pusher('<%= ENV['PUSHER_KEY'] %>', { cluster: '<%= ENV['PUSHER_CLUSTER'] %>', encrypted: true });
-      }
-    </script>
+  <% if request.path == '/daily' %>
+    <link href="https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&display=swap" rel="stylesheet">
   <% end %>
 
-  <% if current_account && ENV['NOLT_SSO_SECRET'] %>
-    <script async src="https://cdn.nolt.io/widgets.js"></script>
-    <script>
-      window.noltQueue=window.noltQueue||[];function nolt(){noltQueue.push(arguments)}
-    </script>
-    <script>
-      nolt('identify', { jwt: '<%= generate_nolt_token %>' });
-    </script>
-  <% end %>
-
-  <% {
-      'jquery/3.7.1' => 'jquery.min.js',
-      'jqueryui/1.13.2' => 'jquery-ui.min.js themes/base/jquery-ui.min.css',
-      'jquery-timeago/1.4.3' => 'jquery.timeago.min.js',
-      'moment.js/2.17.1' => 'moment.min.js locale/en-gb.js',
-      'flatpickr/4.6.13' => 'flatpickr.min.js flatpickr.min.css',
-      'datatables/1.10.16' => 'js/jquery.dataTables.min.js js/dataTables.bootstrap4.min.js css/dataTables.bootstrap4.min.css',       
-      'tributejs/3.5.3' => 'tribute.min.js tribute.min.css',
-      'select2/3.5.2' => 'select2.min.js select2.min.css',
-      'sticky-table-headers/0.1.24' => 'js/jquery.stickytableheaders.min.js',
-      'iframe-resizer/4.2.10' => 'iframeResizer.contentWindow.min.js',
-      'slick-carousel/1.8.1' => 'slick.min.js slick.min.css slick-theme.min.css',
-      'Chart.js/3.5.1' => 'chart.js',
-      'web3/1.3.4' => 'web3.min.js',
-      'highlight.js/11.6.0' => 'highlight.min.js styles/atom-one-dark.min.css',
-      'intro.js/6.0.0' => 'intro.min.js introjs.min.css',
-      'qrcodejs/1.0.0' => 'qrcode.min.js',
-      'masonry/4.0.0' => 'masonry.pkgd.min.js'
-     }.each { |k,v| %>
-  <% v.split(' ').each { |f| u = "https://cdnjs.cloudflare.com/ajax/libs/#{k}/#{f}" %>
-  <% case f.split('.').last.to_sym; when :js %>
-    <script src="<%= u %>"></script>
-  <% when :css %>
-    <link rel="stylesheet" href="<%= u %>">
-  <% end %>
-  <% } %>
-  <% } %>
-
-  <% [
-     '//rawcdn.githack.com/scottdejonge/map-icons/dbf6fd7caedd60d11b5bfb5f267a114a6847d012/dist/css/map-icons.min.css',
-     '/stylesheets/share.css',
-     "/stylesheets/app.css?#{@cachebuster}"
-   ].each { |f| %>
-  <link rel="stylesheet" href="<%= f %>">
-  <% } %>
-
-  <% [
-     '//www.google.com/recaptcha/api.js',
-     '//js.stripe.com/v3/',
-     "//cdn.iframe.ly/embed.js?key=#{ENV['IFRAMELY_KEY']}",
-     "//maps.googleapis.com/maps/api/js?key=#{ENV['GOOGLE_MAPS_PUBLIC_API_KEY']}&libraries=places",
-     '//rawcdn.githack.com/bassjobsen/Bootstrap-3-Typeahead/067bd296184a4dda8c669923417124065b4ebced/bootstrap3-typeahead.min.js',
-     '//rawcdn.githack.com/jackmoore/autosize/6ae70cd3d28888eb858eef1167e6ed75d25dff7f/dist/autosize.min.js',
-     '//rawcdn.githack.com/mahnunchik/markerclustererplus/736b0e3a7d916fbeb2ee5007494f17a5329b11a8/src/markerclusterer.js',
-     '//rawcdn.githack.com/scottdejonge/map-icons/dbf6fd7caedd60d11b5bfb5f267a114a6847d012/dist/js/map-icons.js',
-     '//rawcdn.githack.com/scottgonzalez/jquery-ui-extensions/fb7fd7df3d70e0288394f07bfe78262b548c30d6/src/autocomplete/jquery.ui.autocomplete.html.js',
-     '//cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0',
-     "/javascripts/ext/ckeditor.js?#{@cachebuster}",     
-     '/javascripts/ext/countUp.umd.js',     
-     '/javascripts/ext/jquery-deparam.js',     
-     '/javascripts/ext/linkify.min.js',     
-     '/javascripts/ext/linkify-jquery.min.js',     
-     "/javascripts/pagelets.js?#{@cachebuster}",
-     "/javascripts/jquery.lookup.js?#{@cachebuster}",
-     "/javascripts/app.js?#{@cachebuster}"
-   ].each { |f| %>
-  <script src="<%= f %>"></script>
-  <% } %>
-
-  <script src="/infinite_admin/plugins/loader/pace/pace.min.js"></script>
-  <script src="/infinite_admin/plugins/cookie/js/js.cookie.js"></script>
-  <script src="/infinite_admin/plugins/tooltip/popper/popper.min.js"></script>
-  <script src="/infinite_admin/plugins/bootstrap/bootstrap4/js/bootstrap.js"></script>
-  <script src="/infinite_admin/plugins/scrollbar/slimscroll/jquery.slimscroll.min.js"></script>
-  <script src="/infinite_admin/js/apps.js?<%= @cachebuster %>"></script>
-
-  <script>
-    $(function () {
-      App.init();
-    });
-  </script>
+  <%= partial :'layouts/dependencies' %>
 
   <%= favicon_tag 'black-on-transparent-sq.png' %>
   <title><% if @fulltitle %><%= @fulltitle %><% else %><%= "#{@title} · " if @title %><%= Padrino.env == :development ? 'DEV' : 'Dandelion' %><% end %></title>
   <meta name="description" content="<%= @og_desc %>">
   <meta property="og:title" content="<%= @title %>">
-  <meta property="og:image" content="<%= @og_image %>?<%= @cachebuster %>">
+  <meta property="og:image" content="<%= @og_image %>">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="<%= @title %>">
   <meta name="twitter:description" content="<%= @og_desc %>">
-  <meta name="twitter:image" content="<%= @og_image %>?<%= @cachebuster %>">
+  <meta name="twitter:image" content="<%= @og_image %>">
   <%= partial :'layouts/a2hs' %>
   <% if !current_account && @hide_right_nav %>
     <style>
@@ -172,11 +87,11 @@
         "description": (if @event.description
                           Nokogiri::HTML(@event.description).search('h1,h2,h3,h4,h5,h6,p').first.try(:text).try(:strip)
                         end),
-        "organizer": {
+        "organizer": ({
           "@type": 'Organization',
           "name": @event.organisation.name,
           "url": @event.organisation.website
-        },
+        } if @event.organisation),
         "offers": (@event.ticket_types.map { |ticket_type|
           {
             "@type": "Offer",

@@ -53,8 +53,16 @@ class EventFeedback
 
   def self.ratings
     1.upto(5).to_h do |i|
-      [i.times.map { '<i class="fa fa-star"></i>' }.join, i]
+      [i.times.map { '<i class="bi bi-star-fill"></i>' }.join, i]
     end
+  end
+
+  def self.update_facilitator_feedback_counts
+    fragment = Fragment.find_or_create_by(key: 'facilitator_feedback_counts')
+    feedback_counts = Account.and(:id.in => EventFacilitation.pluck(:account_id)).map do |account|
+      [account.id.to_s, account.unscoped_event_feedbacks_as_facilitator.count]
+    end
+    fragment.update_attributes expires: 1.day.from_now, value: feedback_counts.sort_by { |_, freq| -freq }.to_json
   end
 
   after_create :send_feedback
@@ -81,6 +89,7 @@ class EventFeedback
 
   def send_response
     return if anonymise
+    return unless response
 
     mg_client = Mailgun::Client.new ENV['MAILGUN_API_KEY'], ENV['MAILGUN_REGION']
     batch_message = Mailgun::BatchMessage.new(mg_client, ENV['MAILGUN_NOTIFICATIONS_HOST'])
@@ -119,4 +128,16 @@ class EventFeedback
     batch_message.finalize if ENV['MAILGUN_API_KEY']
   end
   handle_asynchronously :send_destroy_notification
+
+  def self.joined(since: nil, base_header: '')
+    event_feedbacks = order('created_at desc').and(:answers.ne => nil)
+    event_feedbacks = event_feedbacks.and(:created_at.gte => since) if since
+
+    event_feedbacks.map do |ef|
+      next unless ef.event
+      next if ef.answers.all? { |_q, a| a.blank? }
+
+      "#{base_header}# Feedback on #{ef.event.name}, #{ef.event.when_details(ENV['DEFAULT_TIME_ZONE'])} at #{ef.event.location}\n\n#{ef.answers.map { |q, a| "#{base_header}## #{q}\n#{a}" }.join("\n\n")}"
+    end.compact.join("\n\n")
+  end
 end

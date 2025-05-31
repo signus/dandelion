@@ -1,9 +1,9 @@
-/* global timeAgo, eventId, eventUrl, placesRemaining, currency, currencySymbol, stripePk, coinbase, seedsUsername, organisationOcSlug, ocSlug, evmAddress, contractAddress, networkId, networkName, signedIn */
+/* global timeAgo, eventId, eventUrl, placesRemaining, currency, currencySymbol, minimumApplicationFee, stripePk, stripeAccount, coinbase, organisationOcSlug, ocSlug, evmAddress, contractAddress, networkId, networkName, signedIn */
 
 $(function () {
   $('#details form').on('keyup keypress', function (e) {
     const keyCode = e.keyCode || e.which
-    if (keyCode === 13) {
+    if (keyCode === 13 && e.target.tagName !== 'TEXTAREA') {
       e.preventDefault()
       return false
     }
@@ -14,13 +14,15 @@ $(function () {
       const donationAmount = parseFloat($('#donation_amount').val())
       if (donationAmount < 0) {
         $('#donation_amount').val('')
+      } else if (donationAmount > 0 && minimumApplicationFee && donationAmount < minimumApplicationFee) {
+        $('#donation_amount').val(minimumApplicationFee)
       } else {
         $('#donation_amount').val(donationAmount.toFixed(2).endsWith('00') ? donationAmount.toFixed(0) : donationAmount.toFixed(2))
       }
     }
   }).change()
 
-  function price () {
+  function priceWithoutDonation () {
     let p = 0
 
     $('select[name^=quantities]').each(function () {
@@ -30,6 +32,14 @@ $(function () {
     if ($('#percentage_discount').length > 0 && $('#percentage_discount').val() != '') { p = (p * (100 - parseInt($('#percentage_discount').val())) / 100) }
 
     if ($('#discount').length > 0 && $('#discount').val() != '') { p = (p * (100 - parseInt($('#discount').val())) / 100) }
+
+    return p
+  }
+
+  function price () {
+    let p = 0
+
+    p += priceWithoutDonation()
 
     if ($('#donation_amount').length > 0 && $('#donation_amount').val() != '') { p += parseFloat($('#donation_amount').val()) }
 
@@ -44,15 +54,50 @@ $(function () {
     return c
   }
 
+  function fixedDiscount () {
+    let d = 0
+
+    if ($('#fixed-discount').length > 0 && $('#fixed-discount').val() != '') { d += parseFloat($('#fixed-discount').val()) }
+
+    return d
+  }
+
   function balance () {
-    let b = price() - credit()
+    let b = price() - credit() - fixedDiscount()
     if (b < 0) { b = 0 }
     return b
   }
 
+  $('#donation_amount').focus(function () {
+    $('#donation-percent-buttons button').addClass('btn-outline-secondary').removeClass('btn-secondary selected-percent')
+  })
+
+  $('#donation-percent-buttons button').click(function () {
+    $('#donation-percent-buttons button').addClass('btn-outline-secondary').removeClass('btn-secondary selected-percent')
+    $(this).removeClass('btn-outline-secondary').addClass('btn-secondary selected-percent')
+    setTotal()
+  })
+
+  function setDonationAmount () {
+    let p = priceWithoutDonation()
+
+    let dp = $('#donation-percent-buttons button.selected-percent').data('percent')
+
+    if (typeof dp !== 'undefined') {
+      let donationAmount = parseFloat(p * (dp / 100))
+      if (minimumApplicationFee && donationAmount < minimumApplicationFee) {
+        $('#donation-percent-buttons button').addClass('btn-outline-secondary').removeClass('btn-secondary')
+        $('#donation_amount').val(minimumApplicationFee)
+      } else {
+        $('#donation-percent-buttons button.selected-percent').removeClass('btn-outline-secondary').addClass('btn-secondary')
+        $('#donation_amount').val(donationAmount.toFixed(2).endsWith('00') ? donationAmount.toFixed(0) : donationAmount.toFixed(2))
+      }
+    }
+  }
+
   function setTotal () {
+    setDonationAmount()
     const p = price()
-    // const c = credit()
     const b = balance()
 
     $('#totalDisplay').val((+p).toFixed(2))
@@ -61,25 +106,22 @@ $(function () {
       $('#details form button[data-payment-method=rsvp]').show()
       $('#details form button[data-payment-method=stripe]').hide()
       $('#details form button[data-payment-method=coinbase]').hide()
-      $('#details form button[data-payment-method=seeds]').hide()
       $('#details form button[data-payment-method=opencollective]').hide()
       $('#details form button[data-payment-method=evm]').hide()
     } else if (b == 0) {
       $('#details form button[data-payment-method=rsvp]').show().find('span').text('Use credit')
       $('#details form button[data-payment-method=stripe]').hide()
       $('#details form button[data-payment-method=coinbase]').hide()
-      $('#details form button[data-payment-method=seeds]').hide()
       $('#details form button[data-payment-method=opencollective]').hide()
       $('#details form button[data-payment-method=evm]').hide()
     } else if (b > 0) {
       $('#balance').val((+b).toFixed(2))
       let via_card
-      if (coinbase || seedsUsername || ocSlug || evmAddress) { via_card = ' via card' } else { via_card = '' }
+      if (coinbase || ocSlug || evmAddress) { via_card = ' via card' } else { via_card = '' }
       $('#details form button[data-payment-method]:eq(1)').removeClass('btn-dotted')
       $('#details form button[data-payment-method=rsvp]').hide()
       $('#details form button[data-payment-method=stripe]').show().find('span').text('Pay ' + currencySymbol + (+b).toFixed(2) + via_card)
       $('#details form button[data-payment-method=coinbase]').show()
-      $('#details form button[data-payment-method=seeds]').show()
       $('#details form button[data-payment-method=opencollective]').show()
       $('#details form button[data-payment-method=evm]').show()
     }
@@ -113,7 +155,7 @@ $(function () {
     if (halt) { return false }
 
     let numberOfTickets = 0
-    $('select[name^=quantities]').each(function () {
+    $('select[name^=quantities]').not(':disabled').each(function () {
       numberOfTickets += parseInt($(this).val())
     })
     if (numberOfTickets == 0) {
@@ -151,28 +193,13 @@ $(function () {
       if (balance() > 0) {
         if (data.session_id) {
           // Stripe
-          const stripe = Stripe(stripePk)
+          const stripe = stripeAccount ? Stripe(stripePk, { stripeAccount: stripeAccount }) : Stripe(stripePk)
           stripe.redirectToCheckout({
             sessionId: data.session_id
           })
         } else if (data.checkout_id) {
           // Coinbase
           window.location = 'https://commerce.coinbase.com/checkout/' + data.checkout_id
-        } else if (data.seeds_secret) {
-          // SEEDS
-          $('#select-tickets').hide()
-          $('#pay-with-seeds').show()
-          $('#pay-with-seeds').find('.card-body p.lead.please').html('Open the SEEDS app and send <strong>' + data.seeds_value + ' SEEDS</strong> to <strong>' + seedsUsername + '</strong> with the memo')
-          $('#pay-with-seeds').find('.card-body p.lead.memo').html(data.seeds_secret)
-          const offset = $('#pay-with-seeds').offset()
-          window.scrollTo(0, offset.top - $('#header').height() - 10)
-          setInterval(function () {
-            if (Date.now() < data.order_expiry) {
-              $.getJSON('/events/' + eventId + '/orders/' + data.order_id + '/payment_completed', function (_data) {
-                if (_data.payment_completed) { window.location = '?success=true&order_id=' + data.order_id }
-              })
-            }
-          }, 30 * 1000)
         } else if (data.oc_secret) {
           // Open Collective
           window.location = 'https://opencollective.com/' + organisationOcSlug + '/events/' + ocSlug + '/donate?interval=oneTime&amount=' + data.value + '&tags=' + data.oc_secret + '&redirect=' + encodeURIComponent(eventUrl + '?success=true&order_id=' + data.order_id)
@@ -191,10 +218,9 @@ $(function () {
               $('#pay-with-evm').find('.card-body p.web3wallet').html("<mark>Please switch your web3 wallet's network to " + networkName + '</mark>')
               ethereum.request({
                 method: 'wallet_switchEthereumChain',
-                params: [{ chainId: networkId.toString(16) }]
+                params: [{ chainId: '0x' + networkId.toString(16) }]
               })
               ethereum.on('chainChanged', function () {
-                console.log('chainChanged')
                 web3.eth.net.getId().then(thisNetworkId => {
                   if (thisNetworkId == networkId) { connectWeb3Wallet() }
                 })
@@ -206,7 +232,6 @@ $(function () {
 
           const connectWeb3Wallet = function () {
             if (!ethereum.selectedAddress) {
-              console.log('connecting')
               $('#pay-with-evm').find('.card-body p.web3wallet').html('<a href="javascript:;">Connect your web3 wallet</a>')
               $('#pay-with-evm').find('.card-body p.web3wallet a').click(function () {
                 ethereum.request({
@@ -219,7 +244,6 @@ $(function () {
           }
 
           const pay = function () {
-            console.log('paying')
             $('#pay-with-evm').find('.card-body p.web3wallet').remove()
 
             const abi = [{

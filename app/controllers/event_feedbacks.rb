@@ -27,6 +27,19 @@ Dandelion::App.controller do
     erb :'events/event_feedbacks'
   end
 
+  get '/event_feedbacks/report' do
+    sign_in_required!
+    if request.xhr?
+      cp(:'event_feedbacks/report', key: "/event_feedbacks/#{current_account.id}/report", expires: 7.days.from_now)
+    else
+      erb :'event_feedbacks/report'
+    end
+  end
+
+  get '/event_feedbacks/feedback', provides: :txt do
+    current_account.event_feedbacks_as_facilitator.joined
+  end
+
   get '/event_feedbacks/:id' do
     @event_feedback = EventFeedback.find(params[:id]) || not_found
     @event = @event_feedback.event

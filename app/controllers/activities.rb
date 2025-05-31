@@ -30,27 +30,35 @@ Dandelion::App.controller do
     erb :'activities/activity'
   end
 
+  get '/activities/:id/feedback_summary' do
+    @activity = Activity.find(params[:id]) || not_found
+    admins_only!
+    @activity.feedback_summary!
+    redirect back
+  end
+
   get '/activities/:id/events/stats' do
     @activity = Activity.find(params[:id]) || not_found
-    @organisation = @activity.organisation
     activity_admins_only!
     @from = params[:from] ? parse_date(params[:from]) : Date.today
     @to = params[:to] ? parse_date(params[:to]) : nil
+    @start_or_end = (params[:start_or_end] == 'end' ? 'end' : 'start')
     @events = @activity.events
-    @events = params[:order] == 'created_at' ? @events.order('created_at desc') : @events.order('start_time asc')
+    @events = params[:order] == 'created_at' ? @events.order('created_at desc') : @events.order("#{@start_or_end}_time asc")
     q_ids = []
     q_ids += search_events(params[:q]).pluck(:id) if params[:q]
     event_tag_ids = []
     event_tag_ids = EventTagship.and(event_tag_id: params[:event_tag_id]).pluck(:event_id) if params[:event_tag_id]
     event_ids = (!q_ids.empty? && !event_tag_ids.empty? ? (q_ids & event_tag_ids) : (q_ids + event_tag_ids))
     @events = @events.and(:id.in => event_ids) unless event_ids.empty?
+    @events = @events.and(:"#{@start_or_end}_time".gte => @from)
+    @events = @events.and(:"#{@start_or_end}_time".lt => @to + 1) if @to
     @events = @events.and(coordinator_id: params[:coordinator_id]) if params[:coordinator_id]
     @events = @events.and(coordinator_id: nil) if params[:no_coordinator]
-    @events = @events.and(:start_time.gte => @from)
-    @events = @events.and(:start_time.lt => @to + 1) if @to
+    @events = @events.and(:id.nin => EventFacilitation.pluck(:event_id)) if params[:no_facilitators]
     @events = @events.online if params[:online]
     @events = @events.in_person if params[:in_person]
-    erb :'activities/event_stats'
+    erb :'events/event_stats'
   end
 
   get '/activities/:id/edit' do
@@ -75,6 +83,33 @@ Dandelion::App.controller do
     @activity = Activity.find(params[:id]) || not_found
     activity_admins_only!
     erb :'activities/stats'
+  end
+
+  post '/activities/:id/add_follower' do
+    @activity = Activity.find(params[:id]) || not_found
+    activity_admins_only!
+
+    unless params[:email]
+      flash[:error] = 'Please provide an email address'
+      redirect back
+    end
+
+    unless (@account = Account.find_by(email: params[:email].downcase))
+      @account = Account.new(name: params[:email].split('@').first, email: params[:email], password: Account.generate_password)
+      unless @account.save
+        flash[:error] = '<strong>Oops.</strong> Some errors prevented the account from being saved.'
+        redirect back
+      end
+    end
+
+    if @activity.activityships.find_by(account: @account)
+      flash[:warning] = 'That person is already following the activity'
+    else
+      @activity.organisation.organisationships.create account: @account
+      @activity.activityships.create! account: @account
+    end
+
+    redirect back
   end
 
   get '/activities/:id/receive_feedback/:f' do
@@ -117,29 +152,6 @@ Dandelion::App.controller do
     redirect '/accounts/subscriptions'
   end
 
-  get '/activities/:id/subscribe_discussion' do
-    sign_in_required!
-    @activity = Activity.find(params[:id]) || not_found
-    @activityship = current_account.activityships.find_by(activity: @activity) || current_account.activityships.create(activity: @activity)
-    partial :'activities/subscribe_discussion', locals: { activityship: @activityship }
-  end
-
-  get '/activities/:id/set_subscribe_discussion' do
-    sign_in_required!
-    @activity = Activity.find(params[:id]) || not_found
-    @activityship = current_account.activityships.find_by(activity: @activity) || current_account.activityships.create(activity: @activity)
-    @activityship.update_attribute(:subscribed_discussion, true)
-    request.xhr? ? 200 : redirect('/accounts/subscriptions')
-  end
-
-  get '/activities/:id/unsubscribe_discussion' do
-    sign_in_required!
-    @activity = Activity.find(params[:id]) || not_found
-    @activityship = current_account.activityships.find_by(activity: @activity) || current_account.activityships.create(activity: @activity)
-    @activityship.update_attribute(:subscribed_discussion, false)
-    request.xhr? ? 200 : redirect('/accounts/subscriptions')
-  end
-
   get '/activities/:id/activityship' do
     sign_in_required!
     @activity = Activity.find(params[:id]) || not_found
@@ -156,7 +168,7 @@ Dandelion::App.controller do
         activityship.update_attribute(:unsubscribed, false)
       end
     end
-    request.xhr? ? (partial :'activities/activityship', locals: { activity: @activity, btn_class: params[:btn_class] }) : redirect("/activities/#{@activity.id}")
+    request.xhr? ? (partial :'activities_and_local_groups/resourceship', locals: { resource: @activity, resourceship_name: 'activityship', resource_path: "/activities/#{@activity.id}", membership_toggle: params[:membership_toggle], btn_class: params[:btn_class] }) : redirect("/activities/#{@activity.id}")
   end
 
   get '/activities/:id/hide_membership' do
@@ -187,7 +199,7 @@ Dandelion::App.controller do
       @activityships = @activityships.paginate(page: params[:page], per_page: 25)
       erb :'activities/followers'
     when :csv
-      @activity.send_followers_csv(current_account)
+      @activity.send_followers_csv(current_account, :activityships)
       flash[:notice] = 'You will receive the CSV via email shortly.'
       redirect back
     end
@@ -196,7 +208,8 @@ Dandelion::App.controller do
   post '/activities/:id/followers' do
     @activity = Activity.find(params[:id]) || not_found
     activity_admins_only!
-    @activity.import_from_csv(File.read(params[:csv]))
+    @activity.import_from_csv(File.read(params[:csv]), :activityships)
+    flash[:notice] = 'The followers will be added shortly. Refresh the page to check progress.'
     redirect "/activities/#{@activity.id}/followers"
   end
 
@@ -239,21 +252,6 @@ Dandelion::App.controller do
     activity_admins_only!
     @activityship = @activity.activityships.find(params[:activityship_id]) || not_found
     @activityship.update_attribute(:unsubscribed, !params[:subscribed])
-    200
-  end
-
-  get '/activities/:id/subscribed_discussion/:activityship_id' do
-    @activity = Activity.find(params[:id]) || not_found
-    activity_admins_only!
-    @activityship = @activity.activityships.find(params[:activityship_id]) || not_found
-    partial :'activities/subscribed_discussion', locals: { activityship: @activityship }
-  end
-
-  post '/activities/:id/subscribed_discussion/:activityship_id' do
-    @activity = Activity.find(params[:id]) || not_found
-    activity_admins_only!
-    @activityship = @activity.activityships.find(params[:activityship_id]) || not_found
-    @activityship.update_attribute(:subscribed_discussion, params[:subscribed_discussion])
     200
   end
 

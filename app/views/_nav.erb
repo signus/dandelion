@@ -12,52 +12,52 @@
   })
 </script>
 <ul class="nav">
-  <li style="height: 0.5rem"></li>
   <% if current_account %>
     <li class="d-md-none has-sub">
       <a href="javascript:;">
         <b class="caret caret-right pull-right"></b>
-        <i class="fa fa-user"></i>
+        <i class="bi bi-person-fill"></i>
         <span><%= current_account.name %></span>
       </a>
       <%= partial :nav_profile, locals: { ul_class: 'sub-menu' } %>
     </li>
   <% end %>
   <li class="<%= 'active' if request.path == '/' %>">
-    <a href="/" data-toggle="tooltip" title="<%= current_account ? 'Newsfeed' : 'Home' %>" data-placement="right">
-      <% if current_account %>
-        <i class="fa fa-fw fa-newspaper-o"></i>
-        <span class="nav-link-text">Newsfeed</span>
-      <% else %>
-        <i class="ti-home"></i>
-        <span class="nav-link-text">Home</span>
-      <% end %>
+    <a href="/" data-toggle="tooltip" title="Home" data-placement="right">
+      <i class="bi bi-house"></i>
+      <span class="nav-link-text">Home</span>
+    </a>
+  </li>
+  <li class="<%= 'active' if request.path == '/daily' %>">
+    <a href="/daily" data-toggle="tooltip" title="Dandelion Daily" data-placement="right">
+      <i class="bi bi-newspaper"></i>
+      <span class="nav-link-text">Dandelion Daily</span>
     </a>
   </li>
   <% if !current_account %>
     <li class="d-lg-none">
       <a href="/accounts/new" data-toggle="tooltip" title="Sign up" data-placement="right">
-        <i class="fa fa-fw fa-user-plus"></i>
+        <i class="bi bi-person-fill-add"></i>
         <span class="nav-link-text">Sign up</span>
       </a>
     </li>
     <li class="d-lg-none">
       <a href="/accounts/sign_in" data-toggle="tooltip" title="Sign in" data-placement="right">
-        <i class="fa fa-fw fa-sign-in"></i>
+        <i class="bi bi-box-arrow-in-right"></i>
         <span class="nav-link-text">Sign in</span>
       </a>
     </li>
   <% end %>
   <li class="<%= 'active' if request.path == '/events' %>">
     <a href="/events" data-toggle="tooltip" title="Events" data-placement="right">
-      <i class="fa fa-calendar-o"></i>
+      <i class="bi bi-calendar-event"></i>
       <span class="nav-link-text">Events</span>
     </a>
   </li>
   <% if !current_account || current_account.organisationships.count > 20 %>
     <li class="<%= 'active' if request.path == '/organisations' %>">
       <a href="/organisations" data-toggle="tooltip" title="Organisations" data-placement="right">
-        <i class="fa fa-flag"></i>
+        <i class="bi bi-flag-fill"></i>
         <span class="nav-link-text">Organisations</span>
       </a>
     </li>
@@ -65,7 +65,7 @@
     <li class="has-sub <%= 'active' if @organisation %>">
       <a href="javascript:;">
         <b class="caret caret-right pull-right"></b>
-        <i class="fa fa-flag"></i>
+        <i class="bi bi-flag-fill"></i>
         <span>Organisations</span>
       </a>
       <%= ul_nav ([
@@ -81,10 +81,16 @@
                  a_active_class: '' %>
     </li>
   <% end %>
+  <li class="<%= 'active' if request.path == '/facilitators' %>">
+    <a href="/facilitators" data-toggle="tooltip" title="Facilitators" data-placement="right">
+      <i class="bi bi-person-circle"></i>
+      <span class="nav-link-text">Facilitators</span>
+    </a>
+  </li>
   <% if !current_account %>
     <li class="<%= 'active' if request.path == '/gatherings' %>">
       <a href="/gatherings" data-toggle="tooltip" title="Gatherings" data-placement="right">
-        <i class="fa fa-moon-o"></i>
+        <i class="bi bi-moon-fill"></i>
         <span class="nav-link-text">Gatherings</span>
       </a>
     </li>
@@ -92,7 +98,7 @@
     <li class="has-sub <%= 'active' if @gathering %>">
       <a href="javascript:;">
         <b class="caret caret-right pull-right"></b>
-        <i class="fa fa-moon-o"></i>
+        <i class="bi bi-moon-fill"></i>
         <span>Gatherings</span>
       </a>
       <%= ul_nav ([
@@ -107,59 +113,36 @@
                  a_active_class: '' %>
     </li>
   <% end %>
-  <li class="<%= 'active' if request.path == '/facilitators' %>">
-    <a href="/facilitators" data-toggle="tooltip" title="Facilitators" data-placement="right">
-      <i class="fa fa-graduation-cap"></i>
-      <span class="nav-link-text">Facilitators</span>
-    </a>
-  </li>
-  <li class="<%= 'active' if request.path == '/map' %>">
-    <a href="/map" data-toggle="tooltip" title="Places" data-placement="right">
-      <i class="fa fa-binoculars"></i>
-      <span class="nav-link-text">Places</span>
-    </a>
-  </li>
-  <li>
-    <a href="/donate" data-toggle="tooltip" title="Donate" data-placement="right">
-      <i class="fa fa-fw fa-money"></i>
-      <span class="nav-link-text">Donate</span>
-    </a>
-  </li>
-  <li>
-    <a href="/code" data-toggle="tooltip" title="Code" data-placement="right">
-      <i class="fa fa-fw fa-github"></i>
-      <span class="nav-link-text">Code</span>
-    </a>
-  </li>
-  <li>
-    <a
-      href="/contact" data-toggle="tooltip" title="Contact us" data-placement="right">
-      <i class="fa fa-envelope"></i>
-      <span class="nav-link-text">Contact us</span>
-    </a>
-  </li>
-  <li>
-    <a data-nolt="modal" href="https://dandelion.nolt.io" data-toggle="tooltip" title="Feedback?" data-placement="right">
-      <i class="fa fa-fw fa-comment-o"></i>
-      <span class="nav-link-text">Feedback?</span>
-    </a>
-  </li>
-  <li>
+  <li class="<%= 'active' if request.path.starts_with?('/docs') %>">
     <a href="/docs" data-toggle="tooltip" title="How to use Dandelion" data-placement="right">
-      <i class="fa fa-fw fa-question-circle-o"></i>
+      <i class="bi bi-question-circle-fill"></i>
       <span class="nav-link-text">How to use Dandelion</span>
     </a>
   </li>
-  <li>
-    <a href="/books" data-toggle="tooltip" title="Books" data-placement="right">
-      <i class="fa fa-fw fa-book"></i>
-      <span class="nav-link-text">Books</span>
+  <li class="<%= 'active' if request.path == '/books' || request.path == '/films' %>">
+    <a href="/books" data-toggle="tooltip" title="Library" data-placement="right">
+      <i class="bi bi-book"></i>
+      <span class="nav-link-text">Library</span>
     </a>
   </li>
-  <li>
-    <a href="/films" data-toggle="tooltip" title="Films" data-placement="right">
-      <i class="fa fa-fw fa-film"></i>
-      <span class="nav-link-text">Films</span>
+  <li class="<%= 'active' if request.path == '/contact' %>">
+    <a
+      href="/contact" data-toggle="tooltip" title="Contact us" data-placement="right">
+      <i class="bi bi-envelope-fill"></i>
+      <span class="nav-link-text">Contact us</span>
+    </a>
+  </li>
+  <li class="<%= 'active' if request.path == '/code' %>">
+    <a
+      href="/code" data-toggle="tooltip" title="Code" data-placement="right">
+      <i class="bi bi-code"></i>
+      <span class="nav-link-text">Code</span>
+    </a>
+  </li>
+  <li class="<%= 'active' if request.path == '/donate' %>">
+    <a href="/donate" data-toggle="tooltip" title="Donate" data-placement="right">
+      <i class="bi bi-cash-coin"></i>
+      <span class="nav-link-text">Donate</span>
     </a>
   </li>
   <% if admin? %>
@@ -167,50 +150,50 @@
     <li class="nav-header">Stats</li>
     <li>
       <a href="/stats/charts" data-toggle="tooltip" title="Charts" data-placement="right">
-        <i class="fa fa-fw fa-bar-chart"></i>
+        <i class="bi bi-bar-chart-line-fill"></i>
         <span class="nav-link-text">Charts</span>
       </a>
     </li>
     <li>
       <a href="/stats/orders" data-toggle="tooltip" title="Orders" data-placement="right">
-        <i class="fa fa-fw fa-shopping-cart"></i>
+        <i class="bi bi-cart-fill"></i>
         <span class="nav-link-text">Orders</span>
       </a>
     </li>
     <li>
       <a href="/stats/feedback" data-toggle="tooltip" title="Feedback" data-placement="right">
-        <i class="fa fa-fw fa-comment"></i>
+        <i class="bi bi-chat"></i>
         <span class="nav-link-text">Feedback</span>
       </a>
     </li>
     <li>
       <a href="/stats/comments" data-toggle="tooltip" title="Comments" data-placement="right">
-        <i class="fa fa-fw fa-comments"></i>
+        <i class="bi bi-chat-text-fill"></i>
         <span class="nav-link-text">Comments</span>
       </a>
     </li>
     <li>
       <a href="/stats/messages" data-toggle="tooltip" title="Messages" data-placement="right">
-        <i class="fa fa-fw fa-envelope"></i>
+        <i class="bi bi-envelope-fill"></i>
         <span class="nav-link-text">Messages</span>
       </a>
     </li>
     <li>
       <a href="/stats/accounts" data-toggle="tooltip" title="Accounts" data-placement="right">
-        <i class="fa fa-fw fa-user"></i>
+        <i class="bi bi-person-fill"></i>
         <span class="nav-link-text">Accounts</span>
       </a>
     </li>
     <li>
       <a href="/stats/organisations" data-toggle="tooltip" title="Organisations" data-placement="right">
-        <i class="fa fa-fw fa-flag"></i>
+        <i class="bi bi-flag-fill"></i>
         <span class="nav-link-text">Organisations</span>
       </a>
     </li>
     <li>
-      <a href="/stats/places" data-toggle="tooltip" title="Places" data-placement="right">
-        <i class="fa fa-fw fa-binoculars"></i>
-        <span class="nav-link-text">Places</span>
+      <a href="/stats/icons" data-toggle="tooltip" title="Icons" data-placement="right">
+        <i class="bi bi-back"></i>
+        <span class="nav-link-text">Icons</span>
       </a>
     </li>
     <li id="git-badge">

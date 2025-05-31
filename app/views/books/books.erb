@@ -1,3 +1,5 @@
-<p class="lead">Chapter summaries of books recommended by the Dandelion team 📘</p>
+<%= partial :nav_library %>
 
-<%= partial(:'books/blocks', key: 'books/blocks', locals: { books: @books }) %>
+<p class="lead">Books recommended by the Dandelion team, with summaries 📘</p>
+
+<%= cp(:'books/books') %>

@@ -1,11 +1,23 @@
-<div class="row block no-gutters align-items-center <% if event.draft? %>bg-grey-transparent-2<% else %>bg-white<% end %>">
+<% full_width = true %>
+
+<div class="row block no-gutters align-items-stretch <% if event.locked? %>event-locked<% end %>">
   <% if !event.image && (defined?(full_width) && full_width) %>
 
   <% else %>
-    <div class="col-lg-6 order-lg-2 mb-2 mb-lg-0">
-      <% if @organisation && (cohostship = event.cohostships.find_by(organisation: @organisation)) && cohostship.image && (cohostship.image.width >= cohostship.image.height) %>
-        <a target="_parent" href="/e/<%= event.slug %>?cohost=<%=@organisation.slug%>"><img class="w-100" src="<%= u cohostship.image.thumb('992x992').url %>"></a>
-      <% elsif event.image && (event.image.width >= event.image.height) %>
+    <div class="col-lg-6 order-lg-2 mb-2 mb-lg-0 bg-white">
+      <% if @organisation && (cohostship = event.cohostships.find_by(organisation: @organisation)) && (cohostship.image || cohostship.video) %>
+        <% if cohostship.image %>
+          <a target="_parent" href="/e/<%= event.slug %>?cohost=<%=@organisation.slug%>"><img class="w-100" src="<%= u cohostship.image.thumb('992x992').url %>"></a>
+        <% elsif cohostship.video %>
+          <div class="embed-responsive embed-responsive-16by9">
+            <video src="<%=cohostship.video.url%>" type="video/mp4" controls muted playsinline onmouseover="this.play();" onmouseout="this.pause();"></video>
+          </div>
+        <% end %>
+      <% elsif event.video %>
+        <div class="embed-responsive embed-responsive-16by9">
+          <video src="<%=event.video.url%>" type="video/mp4" controls muted playsinline onmouseover="this.play();" onmouseout="this.pause();"></video>
+        </div>
+      <% elsif event.image %>
         <a target="_parent" href="/e/<%= event.slug %>"><img class="w-100" src="<%= u event.image.thumb('992x992').url %>"></a>
       <% end %>
     </div>
@@ -17,6 +29,9 @@
           <div class="row justify-content-between">
             <div class="col ml-1 p-lg-3">
               <%= partial :'events/block_main', locals: { event: event } %>
+              <% if event.carousel_text %>
+                <div class="alert alert-success" style="font-size: 1rem" class="mb-0"><%= event.carousel_text %></div>
+              <% end %>
             </div>
           </div>
         </td>

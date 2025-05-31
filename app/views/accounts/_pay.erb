@@ -15,7 +15,8 @@
       <div class="row">
         <div class="col-12 col-sm-9">
           <p class="lead mb-1">
-            Dandelion operates on a donation/gift economy basis.            
+            Dandelion operates on a donation/gift economy basis.
+            <br />
             <span class="highlight">We rely on your generosity.</span>
           </p>
           <% if last_completed_contribution %>
@@ -34,9 +35,9 @@
             </p>
           <% end %>
 
-          <%= cp(:'accounts/pay_progress', key: "/accounts/pay_progress/#{currency}", locals: {currency: currency}) %>
+          <%= partial :'accounts/pay_progress', locals: {currency: currency} %>
 
-          <div class="text-sm-left text-center">
+          <div class="text-sm-left text-center mt-3">
             <% if currency == 'GBP' %>
               <p class="mb-2">Make a monthly contribution:</p>
               <script>
@@ -65,7 +66,7 @@
               <div class="form-group mb-1 mr-1">
                 <div class="input-group">
                   <div class="input-group-prepend">
-                    <span class="input-group-text"><%= Money.new(0, currency).symbol %></span>
+                    <span class="input-group-text"><%= money_symbol(currency) %></span>
                   </div>
                   <%= hidden_field_tag :currency, value: currency %>
                   <%= number_field_tag :amount, value: 10, style: 'width: 5em;', required: 'required', class: 'form-control', id: 'amount' %>
@@ -74,7 +75,7 @@
               <% if FIAT_CURRENCIES.include?(currency) %>
                 <button data-payment-method="stripe" type="submit" class="btn btn-primary mb-1 ml-0 mr-1" style="height: 2.125rem">
                   Contribute via card
-                  <i class="fa fa-spin fa-circle-o-notch" style="display: none"></i>
+                  <i class="bi bi-spin bi-arrow-repeat" style="display: none"></i>
                 </button>
                 <%= hidden_field_tag :payment_method, value: 'stripe', disabled: true %>
               <% end %>
@@ -82,12 +83,17 @@
                 <div class="d-none d-lg-block">
                   <button data-payment-method="coinbase" type="submit" class="btn mb-1 <% if FIAT_CURRENCIES.include?(currency) %> btn-outline-primary border-0  <% else %> btn-primary <% end %> " style="height: 2.125rem">
                     via crypto
-                    <i class="fa fa-spin fa-circle-o-notch" style="display: none"></i>
+                    <i class="bi bi-spin bi-arrow-repeat" style="display: none"></i>
                   </button>
                   <%= hidden_field_tag :payment_method, value: 'coinbase', disabled: true %>
-                <% end %>
-              </div>
+                </div>
+              <% end %>
             <% end %>
+            <!--
+            <div class="d-lg-none mt-3">
+              or <a target="_blank" href="https://zora.co/collect/base:0x237d1e23458b39d0e720c3a1ec382d2f9e80bd7d">mint one of 100 limited edition Dandelion NFTs on Base via Zora</a>
+            </div>
+            -->
           </div>
           <!--
     <div class="d-none d-lg-block">
@@ -191,12 +197,21 @@
                 return false
 
               })
-              console.log('paying')
             })
           </script>
         </div>
         <div class="d-none d-sm-block col-sm-3">
           <img class="w-100" src="/images/dandelions/<%= Dir["#{Padrino.root}/app/assets/images/dandelions/*"].sample.split('/').last %>">
+          <!--
+          <a target="_blank" href="https://zora.co/collect/base:0x237d1e23458b39d0e720c3a1ec382d2f9e80bd7d">            
+            <img class="w-100" src="/images/dandelions/<%= Dir["#{Padrino.root}/app/assets/images/dandelions/*"].sample.split('/').last %>">
+          </a>
+          -->
+          <!--
+          <small>
+            <a target="_blank" class="text-dark" href="https://zora.co/collect/base:0x237d1e23458b39d0e720c3a1ec382d2f9e80bd7d">Mint one of 100 limited edition Dandelion NFTs on Base via Zora</a>
+          </small>
+          -->
         </div>
       </div>
     </div>

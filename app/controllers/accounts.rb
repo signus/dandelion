@@ -32,8 +32,10 @@ Dandelion::App.controller do
 
   post '/accounts/sign_in_code' do
     if params[:email] && (@account = Account.find_by(email: params[:email].downcase))
-      @account.sign_in_code!
+      @account.send_sign_in_code
       erb :'accounts/requested_sign_in_code'
+    elsif params[:code]
+      redirect "/?sign_in_token=#{params[:code].strip}"
     else
       flash[:error] = "There's no account registered under that email address."
       redirect '/accounts/sign_in'
@@ -85,7 +87,7 @@ Dandelion::App.controller do
       # continue
     elsif ENV['RECAPTCHA_SECRET_KEY']
       agent = Mechanize.new
-      captcha_response = JSON.parse(agent.post('https://www.google.com/recaptcha/api/siteverify', { secret: ENV['RECAPTCHA_SECRET_KEY'], response: params['g-recaptcha-response'] }).body)
+      captcha_response = JSON.parse(agent.post(ENV['RECAPTCHA_VERIFY_URL'], { secret: ENV['RECAPTCHA_SECRET_KEY'], response: params['g-recaptcha-response'] }).body)
       unless captcha_response['success'] == true
         flash[:error] = "Our systems think you're a bot. Please email #{ENV['CONTACT_EMAIL']} if you keep having trouble."
         redirect(back)
@@ -95,8 +97,9 @@ Dandelion::App.controller do
     if session['omniauth.auth']
       @provider = Provider.object(session['omniauth.auth']['provider'])
       @account.provider_links.build(provider: @provider.display_name, provider_uid: session['omniauth.auth']['uid'], omniauth_hash: session['omniauth.auth'])
-      # @account.picture_url = @provider.image.call(session['omniauth.auth']) unless @account.picture
+      # @account.image_url = @provider.image.call(session['omniauth.auth']) unless @account.image
     end
+
     if @account.save
       flash[:notice] = '<strong>Awesome!</strong> Your account was created successfully.'
       unless params[:recaptcha_skip_secret]
@@ -108,6 +111,7 @@ Dandelion::App.controller do
       elsif params[:organisation_id]
         @organisation = Organisation.find(params[:organisation_id])
         organisationship = @organisation.organisationships.create account: @account, skip_welcome: params[:skip_welcome], referrer_id: params[:referrer_id]
+        @organisation.organisationships.find_by(account: @account).set(unsubscribed: nil)
         if organisationship.referrer
           redirect "/o/#{@organisation.slug}/via/#{organisationship.referrer.username}?registered=true"
         else
@@ -116,27 +120,62 @@ Dandelion::App.controller do
       elsif params[:activity_id]
         @activity = Activity.find(params[:activity_id])
         @activity.organisation.organisationships.create account: @account
+        @activity.organisation.organisationships.find_by(account: @account).set(unsubscribed: nil)
         @activity.activityships.create account: @account
+        @activity.activityships.find_by(account: @account).set(unsubscribed: nil)
         redirect "/accounts/edit?activity_id=#{@activity.id}"
       elsif params[:local_group_id]
         @local_group = LocalGroup.find(params[:local_group_id])
         @local_group.organisation.organisationships.create account: @account
+        @local_group.organisation.organisationships.find_by(account: @account).set(unsubscribed: nil)
         @local_group.local_groupships.create account: @account
+        @local_group.local_groupships.find_by(account: @account).set(unsubscribed: nil)
         redirect "/accounts/edit?local_group_id=#{@local_group.id}"
       elsif params[:event_id]
         @event = Event.find(params[:event_id])
         @event.organisation.organisationships.create(account: @account)
+        @event.organisation.organisationships.find_by(account: @account).set(unsubscribed: nil)
         @event.activity.activityships.create(account: @account) if @event.activity
+        @event.activity.activityships.find_by(account: @account).set(unsubscribed: nil)
         @event.local_group.local_groupships.create(account: @account) if @event.local_group
+        @event.local_group.local_groupships.find_by(account: @account).set(unsubscribed: nil)
         redirect "/accounts/edit?event_id=#{@event.id}"
       else
         redirect '/accounts/edit'
       end
-    elsif @account.email && (account = Account.find_by(email: @account.email.downcase))
-      if params[:recaptcha_skip_secret] && params[:organisation_id]
-        @organisation = Organisation.find(params[:organisation_id])
-        @organisation.organisationships.create account: account, skip_welcome: params[:skip_welcome], referrer_id: params[:referrer_id]
-        200
+    elsif @account.email && (existing_account = Account.find_by(email: @account.email.downcase))
+      if params[:organisation_id] || params[:activity_id] || params[:local_group_id] || params[:event_id]
+        if params[:organisation_id]
+          @organisation = Organisation.find(params[:organisation_id])
+          @organisation.organisationships.create account: existing_account, skip_welcome: params[:skip_welcome], referrer_id: params[:referrer_id]
+          @organisation.organisationships.find_by(account: existing_account).set(unsubscribed: nil)
+        elsif params[:activity_id]
+          @activity = Activity.find(params[:activity_id])
+          @activity.organisation.organisationships.create account: existing_account
+          @activity.organisation.organisationships.find_by(account: existing_account).set(unsubscribed: nil)
+          @activity.activityships.create account: existing_account
+          @activity.activityships.find_by(account: existing_account).set(unsubscribed: nil)
+        elsif params[:local_group_id]
+          @local_group = LocalGroup.find(params[:local_group_id])
+          @local_group.organisation.organisationships.create account: existing_account
+          @local_group.organisation.organisationships.find_by(account: existing_account).set(unsubscribed: nil)
+          @local_group.local_groupships.create account: existing_account
+          @local_group.local_groupships.find_by(account: existing_account).set(unsubscribed: nil)
+        elsif params[:event_id]
+          @event = Event.find(params[:event_id])
+          @event.organisation.organisationships.create(account: existing_account)
+          @event.organisation.organisationships.find_by(account: existing_account).set(unsubscribed: nil)
+          @event.activity.activityships.create(account: existing_account) if @event.activity
+          @event.activity.activityships.find_by(account: existing_account).set(unsubscribed: nil)
+          @event.local_group.local_groupships.create(account: existing_account) if @event.local_group
+          @event.local_group.local_groupships.find_by(account: existing_account).set(unsubscribed: nil)
+        end
+        if params[:recaptcha_skip_secret]
+          200
+        else
+          flash[:notice] = "OK, you're on the list!"
+          redirect(back)
+        end
       else
         flash[:error] = "There's already an account registered under that email address. You can request a sign in code below."
         redirect '/accounts/sign_in'
@@ -258,6 +297,13 @@ Dandelion::App.controller do
     redirect "/u/#{@account.username}"
   end
 
+  get '/accounts/:id/feedback_summary' do
+    @account = Account.find(params[:id]) || not_found
+    admins_only!
+    @account.feedback_summary!
+    redirect back
+  end
+
   post '/accounts/:id/reset_password', provides: :json do
     halt unless current_account && (current_account.admin? || current_account.can_reset_passwords?)
     @account = Account.find(params[:id]) || not_found
@@ -281,14 +327,15 @@ Dandelion::App.controller do
     end
   end
 
+  get '/accounts/:id/feedback_summary_email_preview' do
+    account = Account.find(params[:id]) || not_found
+    content = ERB.new(File.read(Padrino.root('app/views/emails/feedback_summary.erb'))).result(binding)
+    Premailer.new(ERB.new(File.read(Padrino.root('app/views/layouts/email.erb'))).result(binding), with_html_string: true, adapter: 'nokogiri', input_encoding: 'UTF-8').to_inline_css
+  end
+
   get '/accounts/:id/following' do
     @account = Account.find(params[:id]) || not_found
     partial :'accounts/following', locals: { accounts: @account.following, starred: @account.following_starred }
-  end
-
-  get '/accounts/:id/places' do
-    @account = Account.find(params[:id]) || not_found
-    partial :'accounts/places'
   end
 
   get '/accounts/:id/organisations' do
@@ -320,11 +367,11 @@ Dandelion::App.controller do
     partial :'accounts/following', locals: { accounts: @account.followers }
   end
 
-  get '/accounts/use_picture/:provider' do
+  get '/accounts/use_image/:provider' do
     sign_in_required!
     @provider = Provider.object(params[:provider])
     @account = current_account
-    @account.picture_url = @provider.image.call(@account.provider_links.find_by(provider: @provider.display_name).omniauth_hash)
+    @account.image_url = @provider.image.call(@account.provider_links.find_by(provider: @provider.display_name).omniauth_hash)
     if @account.save
       flash[:notice] = "<i class=\"#{@provider.icon}\"></i> Grabbed your picture!"
       redirect '/accounts/edit'
@@ -368,10 +415,10 @@ Dandelion::App.controller do
     end
   end
 
-  post '/accounts/:id/picture' do
+  post '/accounts/:id/image' do
     admins_only!
     @account = Account.find(params[:id]) || not_found
-    @account.update_attribute(:picture, params[:picture])
+    @account.update_attribute(:image, params[:image])
     redirect back
   end
 

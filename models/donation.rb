@@ -9,7 +9,10 @@ class Donation
 
   field :amount, type: Float
   field :currency, type: String
+  field :application_fee_paid_to_dandelion, type: Boolean
   field :payment_completed, type: Boolean
+  field :transferred, type: Boolean
+  index({ transferred: 1 })
 
   def incomplete?
     !payment_completed
@@ -32,6 +35,7 @@ class Donation
       amount: :number,
       currency: :text,
       payment_completed: :check_box,
+      application_fee_paid_to_dandelion: :check_box,
       account_id: :lookup,
       event_id: :lookup,
       order_id: :lookup
@@ -39,7 +43,7 @@ class Donation
   end
 
   def self.currencies
-    [''] + CURRENCIES_HASH
+    CURRENCY_OPTIONS
   end
 
   def self.email_viewer?(donation, account)
@@ -51,8 +55,9 @@ class Donation
   before_validation do
     self.amount = amount.round(2)
     self.currency = order.try(:currency) || event.try(:currency)
+    self.application_fee_paid_to_dandelion = order.try(:application_fee_paid_to_dandelion)
     errors.add(:amount, 'minimum is 0.01') if amount < 0.01
-    errors.add(:amount, 'is insufficient') if event.minimum_donation && amount < event.minimum_donation
+    errors.add(:amount, 'is insufficient') if !event.donations_to_dandelion? && event.minimum_donation && amount < event.minimum_donation
   end
 
   def summary

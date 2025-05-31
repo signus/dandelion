@@ -14,12 +14,13 @@ class Organisationship
   field :monthly_donation_currency, type: String
   field :monthly_donation_start_date, type: Date
   field :monthly_donation_postcode, type: String
+  field :monthly_donation_annual, type: Boolean
   field :coordinates, type: Array
   field :why_i_joined, type: String
   field :why_i_joined_edited, type: String
   field :notes, type: String
 
-  %w[admin unsubscribed subscribed_discussion hide_membership receive_feedback why_i_joined_public sent_welcome sent_monthly_donation_welcome hide_referrer].each do |b|
+  %w[admin unsubscribed hide_membership receive_feedback why_i_joined_public sent_welcome sent_monthly_donation_welcome hide_referrer].each do |b|
     field b.to_sym, type: Boolean
     index({ b.to_s => 1 })
   end
@@ -43,20 +44,12 @@ class Organisationship
   end
   after_validation do
     if monthly_donation_postcode_changed?
-      if monthly_donation_postcode
+      if monthly_donation_postcode && ENV['GOOGLE_MAPS_API_KEY']
         geocode || (self.coordinates = nil)
       else
         self.coordinates = nil
       end
     end
-  end
-
-  def self.marker_color
-    '#00B963'
-  end
-
-  def self.marker_icon
-    'fa fa-user'
   end
 
   def self.admin_fields
@@ -66,7 +59,6 @@ class Organisationship
       referrer_id: :lookup,
       admin: :check_box,
       unsubscribed: :check_box,
-      subscribed_discussion: :check_box,
       receive_feedback: :check_box,
       hide_membership: :check_box,
       sent_monthly_donation_welcome: :check_box,
@@ -165,7 +157,7 @@ class Organisationship
                %(
       <div style="text-align: center">
           <a href="#{organisation.website || "#{ENV['BASE_URI']}/o/#{organisation.slug}"}">
-            <img src="#{organisation.image.url}" style="max-width: 100px; padding-top: 16px">
+            <img src="#{organisation.image.thumb('1920x1920').url}" style="max-width: 100px; padding-top: 16px">
           </a>
       </div>
     )
@@ -220,7 +212,7 @@ class Organisationship
                %(
       <div style="text-align: center">
           <a href="#{organisation.website || "#{ENV['BASE_URI']}/o/#{organisation.slug}"}">
-            <img src="#{organisation.image.url}" style="max-width: 100px; padding-top: 16px">
+            <img src="#{organisation.image.thumb('1920x1920').url}" style="max-width: 100px; padding-top: 16px">
           </a>
       </div>
     )
@@ -255,9 +247,17 @@ class Organisationship
     errors.add(:referrer, 'cannot be the same as account') if referrer && account && referrer_id == account_id
     self.referrer = nil if hide_referrer
     self.hide_referrer = nil if referrer
+    if monthly_donation_amount.nil?
+      self.monthly_donation_method = nil
+      self.monthly_donation_currency = nil
+      self.monthly_donation_start_date = nil
+      self.monthly_donation_postcode = nil
+    end
   end
 
   def stripe_user_id
+    return unless stripe_connect_json
+
     JSON.parse(stripe_connect_json)['stripe_user_id']
   end
 
@@ -265,11 +265,9 @@ class Organisationship
     return unless stripe_account_json
 
     j = JSON.parse(stripe_account_json)
-    if j['business_profile'] && j['business_profile']['name']
-      j['business_profile']['name']
-    else
+    j.dig('business_profile', 'name') ||
+      j.dig('settings', 'dashboard', 'display_name') ||
       j['display_name']
-    end
   end
 
   def monthly_donor?
@@ -279,7 +277,7 @@ class Organisationship
   def organisation_tier
     organisation_tier = nil
     organisation.organisation_tiers.order('threshold asc').each do |ot|
-      organisation_tier = ot if Money.new(monthly_donation_amount * 100, monthly_donation_currency) >= Money.new(ot.threshold * 100, organisation.currency)
+      organisation_tier = ot if monthly_donation_amount && monthly_donation_currency && Money.new(monthly_donation_amount * 100, monthly_donation_currency) >= Money.new(ot.threshold * 100, organisation.currency)
     end
     organisation_tier
   end

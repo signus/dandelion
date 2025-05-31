@@ -19,8 +19,8 @@ module Dandelion
     use Dragonfly::Middleware
     use OmniAuth::Builder do
       provider :account
-      provider :ethereum, { custom_title: 'Sign in with Ethereum' }
       provider :google_oauth2, ENV['GOOGLE_CLIENT_ID'], ENV['GOOGLE_CLIENT_SECRET'], { image_size: 400 }
+      provider :ethereum, { custom_title: 'Sign in with Ethereum' }
     end
     use Rack::Cors do
       allow do
@@ -39,58 +39,22 @@ module Dandelion
     before do
       @cachebuster = Padrino.env == :development ? SecureRandom.uuid : (ENV['RENDER_GIT_COMMIT'] || ENV['HEROKU_SLUG_COMMIT'])
       redirect "#{ENV['BASE_URI']}#{request.path}#{"?#{request.query_string}" unless request.query_string.blank?}" if ENV['REDIRECT_BASE'] && ENV['BASE_URI'] && (ENV['BASE_URI'] != "#{request.scheme}://#{request.env['HTTP_HOST']}")
-      begin
-        Time.zone = if current_account && current_account.time_zone
-                      current_account.time_zone
-                    elsif session[:time_zone]
-                      session[:time_zone]
-                    # elsif request.location && request.location.data['timezone']
-                    #   session[:time_zone] = request.location.data['timezone']
-                    else
-                      ENV['DEFAULT_TIME_ZONE']
-                    end
-      rescue StandardError
-        Time.zone = ENV['DEFAULT_TIME_ZONE']
-      end
+      set_time_zone
       fix_params!
-      @_params = params; # force controllers to inherit the fixed params
-      def params
-        @_params
-      end
       if params[:sign_in_token]
-        if (account = Account.find_by(sign_in_token: params[:sign_in_token]))
-          flash.now[:notice] = 'Signed in via a code/link'
-          account.update_attribute(:failed_sign_in_attempts, 0)
-          account.sign_ins.create(env: env_yaml, skip_increment: %w[unsubscribe give_feedback subscriptions].any? { |p| request.path.include?(p) })
-          if account.sign_ins_count == 1
-            account.set(email_confirmed: true)
-            account.send_activation_notification
-          end
-          session[:account_id] = account.id.to_s
-          account.update_attribute(:sign_in_token, SecureRandom.uuid)
-        elsif !current_account
-          kick! notice: "That sign in code/link isn't valid any longer. Please request a new one."
-        end
+        sign_in_via_token
       elsif params[:api_key]
-        if (account = Account.find_by(api_key: params[:api_key]))
-          session[:account_id] = account.id.to_s
-        elsif !current_account
-          403
-        end
+        sign_in_via_api_key
       end
-      PageView.create(path: request.path, query_string: request.query_string) if File.extname(request.path).blank? && !request.xhr? && !request.is_crawler?
-      @og_desc = 'Find and host regenerative events and co-created gatherings 🧘🏼‍♀️ 🌱 🕺'
-      @og_image = "#{ENV['BASE_URI']}/images/cover2.jpg"
+      PageView.create(path: request.path, query_string: request.query_string) if File.extname(request.path).blank? && !request.xhr? && !request.is_crawler? && !request.path.start_with?('/z/')
+      @og_desc = "Find #{%w[soulful regenerative metamodern participatory conscious transformative holistic ethical].join(' · ')} events and co-created gatherings"
+      @og_image = "#{ENV['BASE_URI']}/images/link.jpg"
       current_account.set(last_active: Time.now) if current_account
     end
 
     error do
       airbrake_notify(env['sinatra.error'])
-      if content_type == :html
-        erb :error, layout: :application
-      else
-        500
-      end
+      erb :error, layout: :application
     end
 
     get '/error' do
@@ -98,15 +62,26 @@ module Dandelion
     end
 
     not_found do
-      if content_type == :html
-        erb :not_found, layout: :application
-      else
-        404
-      end
+      erb :not_found, layout: :application
     end
 
     get '/not_found' do
       erb :not_found, layout: :application
+    end
+
+    get '/fragments/delete/:q' do
+      admins_only!
+      if params[:q]
+        count = Fragment.and(key: /#{Regexp.escape(params[:q])}/i).delete_all
+        flash[:notice] = "Deleted #{pluralize(count, 'fragment')}"
+      end
+      redirect '/'
+    end
+
+    get '/geolocate' do
+      MaxMind::GeoIP2::Reader.new(database: 'GeoLite2-City.mmdb').city(ip_from_cloudflare).to_json
+    rescue StandardError => e
+      e.to_s
     end
 
     get '/privacy' do
@@ -134,9 +109,8 @@ module Dandelion
         end
       else
         @from = Date.today
-        @events = Event.live.public.legit.future(@from)
+        @events = Event.live.public.browsable.future(@from)
         @accounts = []
-        @places = Place.all.order('created_at desc')
         if request.xhr?
           400
         else
@@ -205,12 +179,6 @@ module Dandelion
       end
     end
 
-    get '/notifications/:id' do
-      admins_only!
-      @notification = Notification.find(params[:id]) || not_found
-      erb :'emails/notification', locals: { notification: @notification, circle: @notification.circle }, layout: false
-    end
-
     post '/upload' do
       sign_in_required!
       upload = current_account.uploads.create(file: params[:upload])
@@ -222,22 +190,25 @@ module Dandelion
     end
 
     get '/code' do
-      erb :code
+      erb :'code/code'
     end
 
     get '/token' do
       erb :token
     end
 
-    get '/films' do
-      @title = 'Films'
-      erb :'films/films'
-    end
-
     get '/substack_opt_in' do
       sign_in_required!
       current_account.update_attribute(:substack_opt_in, Time.now)
       erb :substack_opt_in
+    end
+
+    get '/stripe_row_splitter' do
+      erb :stripe_row_splitter
+    end
+
+    post '/stripe_row_splitter', provides: :csv do
+      StripeRowSplitter.split(File.read(params[:csv]))
     end
   end
 end

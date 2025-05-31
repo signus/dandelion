@@ -26,20 +26,20 @@
     <h2 class="mb-3">Past events</h2>
 
     <% if events.count > 0 %>
-      <div class="fake-container-fluid mb-3">
-        <div class="row bg-grey-transparent-2 pt-4 px-5" id="events">
-          <% events.each { |event| next if event.draft? && !event_admin?(event) %>
+      <div class="mb-3">
+        <div class="row" id="events">
+          <% events.each { |event| next if event.locked? && !event_admin?(event) %>
           <div class="col-12 <%= block_class if defined?(block_class) %>" id="<%= event.id %>">
             <div class="mb-4">
 
-              <div class="row block no-gutters align-items-center <% if event.draft? %>bg-grey-transparent-2<% else %>bg-white<% end %>">
+              <div class="row block no-gutters align-items-stretch <% if event.locked? %>event-locked<% end %>">
                 <% if !event.image && (defined?(full_width) && full_width) %>
 
                 <% else %>
-                  <div class="col-lg-6 order-lg-2 mb-2 mb-lg-0">
-                    <% if @organisation && (cohostship = event.cohostships.find_by(organisation: @organisation)) && cohostship.image && (cohostship.image.width >= cohostship.image.height) %>
+                  <div class="col-lg-6 order-lg-2 mb-2 mb-lg-0 bg-white">
+                    <% if @organisation && (cohostship = event.cohostships.find_by(organisation: @organisation)) && cohostship.image %>
                       <a target="_parent" href="/e/<%= event.slug %>?cohost=<%=@organisation.slug%>"><img class="w-100" src="<%= u cohostship.image.thumb('992x992').url %>"></a>
-                    <% elsif event.image && (event.image.width >= event.image.height) %>
+                    <% elsif event.image %>
                       <a target="_parent" href="/e/<%= event.slug %>"><img class="w-100" src="<%= u event.image.thumb('992x992').url %>"></a>
                     <% end %>
                   </div>
@@ -60,7 +60,7 @@
                                   <% if (event_feedback = event.event_feedbacks.find_by(account: current_account)) %>
                                     <div class="mt-1">
                                       <% if event_feedback.rating %>
-                                        <% event_feedback.rating.times do %><i class="fa fa-star"></i><% end %>
+                                        <% event_feedback.rating.times do %><i class="bi bi-star-fill"></i><% end %>
                                       <% end %>
 
                                       <% event_feedback.event.feedback_questions_a.each_with_index { |q,i|
@@ -82,7 +82,7 @@
                                     <% end } %>
                                   </div>
                                 <% else %>
-                                  <i data-toggle="tooltip" title="Location" class="fa fa-li fa-star-o"></i>
+                                  <i data-toggle="tooltip" title="Give feedback" class="bi bi-star"></i>
                                   <a href="/events/<%=event.id%>/give_feedback">Give feedback</a>
                                 <% end %>
                               </li>

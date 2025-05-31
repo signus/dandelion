@@ -50,10 +50,11 @@ gem 'airbrake'
 gem 'airrecord'
 gem 'faraday'
 gem 'ferrum'
-gem 'google_drive2', require: 'google_drive'
 gem 'jwt'
 gem 'mechanize'
+gem 'octokit'
 gem 'ruby-openai'
+gem 'yt'
 
 # Payments
 gem 'coinbase_commerce', github: 'quiknode-labs/coinbase-commerce-ruby'
@@ -69,7 +70,6 @@ gem 'incoming'
 gem 'mail'
 gem 'mailgun-ruby', require: 'mailgun'
 gem 'premailer'
-gem 'pusher'
 
 # Prawn (PDFs)
 gem 'prawn', github: 'prawnpdf/prawn'
@@ -80,6 +80,7 @@ gem 'rqrcode'
 # Time
 gem 'icalendar'
 gem 'timezone'
+gem 'tzinfo-data'
 
 # Geography
 gem 'countries'
@@ -100,5 +101,7 @@ gem 'rack-utf8_sanitizer'
 gem 'bazaar'
 gem 'chroma'
 gem 'crawler_detect'
+gem 'digest'
 gem 'matrix' # necessary in connection with capybara/cuprite
+gem 'maxmind-geoip2'
 gem 'mini_magick'

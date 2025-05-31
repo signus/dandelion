@@ -1,0 +1,78 @@
+<%=
+events = Event.live.public.browsable
+  .and(:description.ne => nil)
+  .and(:start_time.gte => @date, :start_time.lt => @date + 1)
+render_article("Today's events", "Create a two-paragraph summary of these event(s), happening today. IMPORTANT: Two paragraphs only.", events)
+%>
+
+<%=
+events = Event.live.public.browsable
+  .and(:end_time.gte => @date - 2, :end_time.lt => @date - 1)
+  .reject { |event| event.event_feedbacks.empty? || event.event_feedbacks.all? { |ef| ef.answers.map { |q,a| a.blank? }.all? } }
+render_article("Feedback report", "Create a two-paragraph summary of the feedback on these event(s). IMPORTANT: Two paragraphs only.", events, use_feedback: true)
+%>
+
+<%=
+events = Event.live.public.browsable
+  .and(:description.ne => nil)
+  .and(:created_at.gte => @date - 1, :created_at.lt => @date)
+render_article("Recently listed", "Create a two-paragraph summary of these newly-listed event(s). IMPORTANT: Two paragraphs only.", events)
+%>
+
+<%=
+events = Event.trending(@date).first(3)
+render_article("Trending events", "Create a two-paragraph summary of these trending, upcoming event(s). IMPORTANT: Two paragraphs only.", events)
+%>
+
+<div class="row">
+  <div class="col-md-4 pr-md-5">
+    <div class="article single-column">
+      <h3>Book of the day</h3>
+      <div>
+        <% book = Book.all(filter: '{Dandelion} = 1').shuffle.first %>
+        <a href="/books/<%= book['Slug'] %>">
+          <img style="max-width: 100%" src="/books/<%= book['Slug'] %>.jpg">
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4 pr-md-5">
+    <div class="article single-column">
+      <h3>Film of the day</h3>
+      <div>
+        <% film = Film.all.shuffle.first %>
+        <a href="<%= film['URL'] %>">
+          <img style="max-width: 100%" src="/films/<%= film['Slug'] %>.jpg">
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4 pr-md-5">
+    <div class="article single-column">
+      <h3>Facilitator of the day</h3>
+      <div>
+        <%
+        if Padrino.env == :development
+          account = Account.first
+        else
+          f = Fragment.find_by(key: 'facilitator_feedback_counts')
+          account_ids_freq = JSON.parse(f.value)
+          account = Account.and(
+            :image_uid.ne => nil,
+            :id.in => account_ids_freq.select { |id, freq| freq >= 20 }.map { |id, freq| id } & EventFacilitation.and(:created_at.gt => 1.year.ago).pluck(:account_id).map(&:to_s).uniq
+          ).sample
+        end
+        %>
+        <a style="text-decoration: none" href="javascript:;" data-account-username="<%= account.username %>">
+          <img class="w-100 <%= 'private' if account.private? %>" src="<%= u account.image_thumb_or_gravatar_url %>">
+          <h4 class="mt-2">
+            <a class="text-dark" href="/u/<%= account.username %>"><%= account.name %></a>
+          </h4>
+          <div class="facilitator-info">
+            <%= cp(:'accounts/facilitator_info', key: "/facilitator_info?account_id=#{account.id}", locals: { account: account }) %>
+          </div>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>

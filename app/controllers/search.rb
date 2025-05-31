@@ -8,32 +8,26 @@ Dandelion::App.controller do
       results = []
 
       if !@type || @type == 'events'
-        results += search(Event, Event.live.public.legit.future(1.month.ago), @q, 5).map do |event|
-          { label: %(<i class="fa fa-fw fa-calendar"></i> #{event.name} (#{concise_when_details(event)})), value: %(event:"#{event.name}") }
+        results += search(Event, Event.live.public.browsable.future(1.month.ago), @q, 5).map do |event|
+          { label: %(<i class="bi bi-calendar-event"></i> #{event.name} (#{concise_when_details(event)})), value: %(event:"#{event.name}") }
         end
       end
 
       if !@type || @type == 'accounts'
         results += search(Account, Account.public, @q, 5).map do |account|
-          { label: %(<i class="fa fa-fw fa-user"></i> #{account.name}), value: %(account:"#{account.name}") }
+          { label: %(<i class="bi bi-person-fill"></i> #{account.name}), value: %(account:"#{account.name}") }
         end
       end
 
       if !@type || @type == 'organisations'
         results += search(Organisation, Organisation.all, @q, 5).map do |organisation|
-          { label: %(<i class="fa fa-fw fa-flag"></i> #{organisation.name}), value: %(organisation:"#{organisation.name}") }
+          { label: %(<i class="bi bi-flag-fill"></i> #{organisation.name}), value: %(organisation:"#{organisation.name}") }
         end
       end
 
       if !@type || @type == 'gatherings'
         results += search(Gathering, Gathering.and(listed: true).and(:privacy.ne => 'secret'), @q, 5).map do |gathering|
-          { label: %(<i class="fa fa-fw fa-moon"></i> #{gathering.name}), value: %(gathering:"#{gathering.name}") }
-        end
-      end
-
-      if !@type || @type == 'places'
-        results += search(Place, Place.all, @q, 5).map do |place|
-          { label: %(<i class="fa fa-fw fa-map"></i> #{place.name}), value: %(place:"#{place.name}") }
+          { label: %(<i class="bi bi-moon-fill"></i> #{gathering.name}), value: %(gathering:"#{gathering.name}") }
         end
       end
 
@@ -41,7 +35,7 @@ Dandelion::App.controller do
     else
       @type = params[:type] || 'events'
       if (@q = params[:q])
-        %w[gathering place organisation event account].each do |t|
+        %w[gathering organisation event account].each do |t|
           next unless params[:q].starts_with?("#{t}:")
 
           @q += '"' unless @q.ends_with?('"')
@@ -51,10 +45,10 @@ Dandelion::App.controller do
         case @type
         when 'events'
           if params[:q] && params[:q].starts_with?('event:')
-            @events = Event.live.public.legit.future(1.month.ago).and(name: @q)
+            @events = Event.live.public.browsable.future(1.month.ago).and(name: @q)
             redirect "/e/#{@events.first.slug}" if @events.count == 1
           end
-          @events = search(Event, Event.live.public.legit.future(1.month.ago), @q, 25)
+          @events = search(Event, Event.live.public.browsable.future(1.month.ago), @q, 25)
         when 'accounts'
           if params[:q] && params[:q].starts_with?('account:')
             @accounts = Account.public.and(name: @q)
@@ -79,12 +73,6 @@ Dandelion::App.controller do
             redirect "/g/#{@gatherings.first.slug}" if @gatherings.count == 1
           end
           @gatherings = search(Gathering, Gathering.and(listed: true).and(:privacy.ne => 'secret'), @q, 25)
-        when 'places'
-          if params[:q] && params[:q].starts_with?('place:')
-            @places = Place.all.and(name: @q)
-            redirect "/places/#{@places.first.id}" if @places.count == 1
-          end
-          @places = search(Place, Place.all, @q, 25)
         end
       end
 

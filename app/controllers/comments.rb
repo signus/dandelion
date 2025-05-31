@@ -11,7 +11,12 @@ Dandelion::App.controller do
 
   get '/commentable' do
     @commentable = params[:commentable_type].constantize.find(params[:commentable_id])
-    partial :'comments/commentable', locals: { commentable: @commentable, chat: params[:chat] }
+    partial :'comments/commentable', locals: { commentable: @commentable }
+  end
+
+  get '/chat' do
+    @commentable = params[:commentable_type].constantize.find(params[:commentable_id])
+    partial :'comments/chat', locals: { commentable: @commentable }
   end
 
   post '/comment' do
@@ -108,7 +113,7 @@ Dandelion::App.controller do
     redirect @post.url
   end
 
-  get '/posts/:id/replies' do
+  get '/posts/:id/post_replies' do
     @post = Post.find(params[:id]) || not_found
     @commentable = @post.commentable
     partial :'comments/replies', locals: { post: @post }
@@ -148,7 +153,7 @@ Dandelion::App.controller do
   get '/subscriptions/create' do
     sign_in_required!
     @post = Post.find(params[:post_id]) || not_found
-    @post.subscriptions.create!(account: current_account)
+    @post.subscriptions.create(account: current_account)
     200
   end
 

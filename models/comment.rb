@@ -65,9 +65,6 @@ class Comment
       team = commentable
       gathering = team.gathering
       true if (membership = gathering.memberships.find_by(account: account)) && membership.admin?
-    elsif commentable.is_a?(Gathering)
-      gathering = commentable
-      true if (membership = gathering.memberships.find_by(account: account)) && membership.admin?
     else
       false
     end
@@ -77,42 +74,20 @@ class Comment
     comment && account && (
       if %w[DocPage].include?(comment.commentable_type)
         account.admin?
-      elsif %w[Organisation].include?(comment.commentable_type)
-        Organisation.admin?(comment.commentable, account)
-      elsif %w[Activity].include?(comment.commentable_type)
-        Activity.admin?(comment.commentable, account)
-      elsif %w[LocalGroup].include?(comment.commentable_type)
-        LocalGroup.admin?(comment.commentable, account)
-      elsif %w[Gathering].include?(comment.commentable_type)
-        Gathering.admin?(comment.commentable, account)
       elsif %w[Team Tactivity Mapplication].include?(comment.commentable_type)
         Gathering.admin?(comment.commentable.gathering, account)
-      elsif %w[Account].include?(comment.commentable_type)
-        comment.commentable_id == account.id
-      elsif %w[Place].include?(comment.commentable_type)
-        comment.commentable.account_id == account.id
       end
     )
   end
 
   def circle
-    if %w[Team Tactivity Mapplication].include?(commentable_type)
-      commentable.gathering
-    elsif %w[Account Gathering Activity LocalGroup Organisation Place].include?(commentable_type)
-      commentable
-    end
+    return unless %w[Team Tactivity Mapplication].include?(commentable_type)
+
+    commentable.gathering
   end
 
   def name
     post.subject
-  end
-
-  after_create do
-    PUSHER.trigger("post.#{post.id}", 'updated', {}) if defined?(PUSHER)
-  end
-
-  after_destroy do
-    PUSHER.trigger("post.#{post.id}", 'updated', {}) if defined?(PUSHER)
   end
 
   before_validation do
@@ -161,27 +136,9 @@ class Comment
     elsif commentable.is_a?(Event)
       event = commentable
       s << "[#{event.name}] "
-    elsif commentable.is_a?(LocalGroup)
-      local_group = commentable
-      s << "[#{local_group.organisation.name}/#{local_group.name}] "
-    elsif commentable.is_a?(Activity)
-      activity = commentable
-      s << "[#{activity.organisation.name}/#{activity.name}] "
-    elsif commentable.is_a?(Organisation)
-      organisation = commentable
-      s << "[#{organisation.name}] "
     elsif commentable.is_a?(ActivityApplication)
       activity_application = commentable
       s << "[#{activity_application.activity.organisation.name}/#{activity_application.activity.name}/#{activity_application.account.name}] "
-    elsif commentable.is_a?(Place)
-      place = commentable
-      s << "[Places/#{place.name}] "
-    elsif commentable.is_a?(Gathering)
-      gathering = commentable
-      s << "[#{gathering.name}] "
-    elsif commentable.is_a?(Account)
-      account = commentable
-      s << "[#{account.name}] "
     elsif commentable.respond_to?(:gathering)
       s << '['
       s << commentable.gathering.name

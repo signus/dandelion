@@ -36,7 +36,7 @@ Dandelion::App.controller do
       @organisations = @organisations.and(name: /#{Regexp.escape(params[:q])}/i) if params[:q]
       @organisations = @organisations.and(id: params[:id]) if params[:id]
       {
-        results: @organisations.map { |organisation| { id: organisation.id.to_s, text: "#{organisation.name} (id:#{organisation.id})" } }
+        results: @organisations.map { |organisation| { id: organisation.id.to_s, text: "#{organisation.name} (#{organisation.slug})" } }
       }.to_json
     end
   end
@@ -133,7 +133,15 @@ Dandelion::App.controller do
     if @organisation.update_attributes(mass_assigning(params[:organisation], Organisation))
       flash[:notice] = 'The organisation was saved.'
 
-      redirect(current_account.organisations.count == 1 ? "/o/#{@organisation.slug}" : "/o/#{@organisation.slug}/edit")
+      redirect(
+        if @organisation.events.count == 0
+          "/events/new?organisation_id=#{@organisation.id}&new_org=1"
+        elsif current_account.organisations.count == 1
+          "/o/#{@organisation.slug}"
+        else
+          "/o/#{@organisation.slug}/edit"
+        end
+      )
     else
       flash.now[:error] = 'There was an error saving the organisation.'
       erb :'organisations/build'
@@ -176,128 +184,6 @@ Dandelion::App.controller do
     end
   end
 
-  get '/o/:slug/events_block' do
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    @events = @organisation.events_for_search(include_all_local_group_events: (true if params[:local_group_id])).future_and_current_featured
-    @events = @events.and(monthly_donors_only: true) if params[:members_events]
-    partial :'organisations/events_block'
-  end
-
-  get '/o/:slug/events', provides: %i[html ics json] do
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    @events = @organisation.events_for_search(include_all_local_group_events: (true if params[:local_group_id]))
-    @from = params[:from] ? parse_date(params[:from]) : Date.today
-    @to = params[:to] ? parse_date(params[:to]) : nil
-    @events = params[:order] == 'created_at' ? @events.order('created_at desc') : @events.order('start_time asc')
-    q_ids = []
-    q_ids += search_events(params[:q]).pluck(:id) if params[:q]
-    event_tag_ids = []
-    event_tag_ids = EventTagship.and(event_tag_id: params[:event_tag_id]).pluck(:event_id) if params[:event_tag_id]
-    event_ids = (!q_ids.empty? && !event_tag_ids.empty? ? (q_ids & event_tag_ids) : (q_ids + event_tag_ids))
-    @events = @events.and(:id.in => event_ids) unless event_ids.empty?
-    @events = @events.and(local_group_id: params[:local_group_id]) if params[:local_group_id]
-    @events = @events.and(activity_id: params[:activity_id]) if params[:activity_id]
-    carousel = nil
-    if params[:carousel_id]
-      @events = if params[:carousel_id] == 'featured'
-                  @events.and(featured: true)
-                else
-                  carousel = Carousel.find(params[:carousel_id])
-                  @events.and(:id.in => EventTagship.and(:event_tag_id.in => carousel.event_tags.pluck(:id)).pluck(:event_id))
-                end
-    end
-    @events = @events.online if params[:online]
-    @events = @events.in_person if params[:in_person]
-    @events = @events.and(monthly_donors_only: true) if params[:members_events]
-    @events = @events.and(featured: true) if params[:featured]
-    if params[:featured_or_course]
-      @events = @events.and(:id.in =>
-        @organisation.events.and(featured: true).pluck(:id) +
-        @organisation.events.course.pluck(:id))
-    end
-    case content_type
-    when :json
-      if params[:past] || (carousel && carousel.name.downcase.include?('past events'))
-        @past = true
-        @events = @events.past
-      else
-        @events = @events.future_and_current_featured(@from)
-        @events = @events.and(:start_time.lt => @to + 1) if @to
-      end
-      @events.map do |event|
-        {
-          id: event.id.to_s,
-          slug: event.slug,
-          name: event.name,
-          cohosts: event.cohosts.map { |organisation| { name: organisation.name, slug: organisation.slug } },
-          facilitators: event.event_facilitators.map { |account| { name: account.name, username: account.username } },
-          activity: event.activity ? { name: event.activity.name, id: event.activity_id.to_s } : nil,
-          local_group: event.local_group ? { name: event.local_group.name, id: event.local_group_id.to_s } : nil,
-          email: event.email,
-          tags: event.event_tags.map(&:name),
-          start_time: event.start_time,
-          end_time: event.end_time,
-          location: event.location,
-          time_zone: event.time_zone,
-          image: event.image ? event.image.thumb('1920x1920').url : nil,
-          description: event.description
-        }
-      end.to_json
-    when :html
-      if params[:past] || (carousel && carousel.name.downcase.include?('past events'))
-        @past = true
-        @events = @events.past
-      else
-        @events = @events.future_and_current_featured(@from)
-        @events = @events.and(:start_time.lt => @to + 1) if @to
-      end
-      if request.xhr?
-        if params[:display] == 'map'
-          @lat = params[:lat]
-          @lng = params[:lng]
-          @zoom = params[:zoom]
-          @south = params[:south]
-          @west = params[:west]
-          @north = params[:north]
-          @east = params[:east]
-          box = [[@west.to_f, @south.to_f], [@east.to_f, @north.to_f]]
-
-          @events = @events.and(coordinates: { '$geoWithin' => { '$box' => box } }) unless @events.empty?
-          @points_count = @events.count
-          @points = @events.to_a
-          partial :'maps/map', locals: { stem: "/o/#{@organisation.slug}/events", dynamic: true, points: @points, points_count: @points_count, centre: (OpenStruct.new(lat: @lat, lng: @lng) if @lat && @lng), zoom: @zoom }
-        else
-          partial :'organisations/events'
-        end
-      else
-        erb :'organisations/events', layout: (params[:minimal] ? 'minimal' : nil)
-      end
-    when :ics
-      @events = @events.current(3.months.ago)
-      cal = Icalendar::Calendar.new
-      cal.append_custom_property('X-WR-CALNAME', @organisation.name)
-      @events.each do |event|
-        next if event.draft?
-
-        cal.event do |e|
-          if @organisation.ical_full
-            e.summary = event.name
-            e.dtstart = event.start_time.utc.strftime('%Y%m%dT%H%M%SZ')
-            e.dtend = event.end_time.utc.strftime('%Y%m%dT%H%M%SZ')
-          else
-            e.summary = (event.start_time.to_date == event.end_time.to_date ? event.name : "#{event.name} starts")
-            e.dtstart = (event.start_time.to_date == event.end_time.to_date ? event.start_time.utc.strftime('%Y%m%dT%H%M%SZ') : Icalendar::Values::Date.new(event.start_time.to_date))
-            e.dtend = (event.start_time.to_date == event.end_time.to_date ? event.end_time.utc.strftime('%Y%m%dT%H%M%SZ') : nil)
-          end
-          e.location = event.location
-          e.description = %(#{ENV['BASE_URI']}/events/#{event.id})
-          e.uid = event.id.to_s
-        end
-      end
-      cal.to_ical
-    end
-  end
-
   get '/o/:slug/carousels/:id' do
     @organisation = Organisation.find_by(slug: params[:slug]) || not_found
     if params[:id] == 'featured'
@@ -308,66 +194,30 @@ Dandelion::App.controller do
     end
   end
 
-  get '/o/:slug/orders', provides: %i[html csv] do
+  post '/o/:slug/add_follower' do
     @organisation = Organisation.find_by(slug: params[:slug]) || not_found
     organisation_admins_only!
-    @from = params[:from] ? parse_date(params[:from]) : nil
-    @to = params[:to] ? parse_date(params[:to]) : nil
-    @orders = @organisation.orders
-    @orders = @orders.and(:account_id.in => search_accounts(params[:q]).pluck(:id)) if params[:q]
-    @orders = @orders.and(:created_at.gte => @from) if @from
-    @orders = @orders.and(:created_at.lt => @to + 1) if @to
-    @orders = @orders.and(affiliate_type: 'Organisation', affiliate_id: params[:affiliate_id]) if params[:affiliate_id]
-    case content_type
-    when :html
-      erb :'organisations/orders'
-    when :csv
-      CSV.generate do |csv|
-        csv << %w[name email value currency opt_in_organisation opt_in_facilitator hear_about answers created_at]
-        @orders.each do |order|
-          csv << [
-            order.account ? order.account.name : '',
-            if order_email_viewer?(order)
-              order.account ? order.account.email : ''
-            else
-              ''
-            end,
-            order.value,
-            order.currency,
-            order.opt_in_organisation,
-            order.opt_in_facilitator,
-            order.hear_about,
-            order.answers,
-            order.created_at.to_fs(:db_local)
-          ]
-        end
+
+    unless params[:email]
+      flash[:error] = 'Please provide an email address'
+      redirect back
+    end
+
+    unless (@account = Account.find_by(email: params[:email].downcase))
+      @account = Account.new(name: params[:email].split('@').first, email: params[:email], password: Account.generate_password)
+      unless @account.save
+        flash[:error] = '<strong>Oops.</strong> Some errors prevented the account from being saved.'
+        redirect back
       end
     end
-  end
 
-  get '/o/:slug/events/stats' do
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    organisation_admins_only!
-    @from = params[:from] ? parse_date(params[:from]) : Date.today
-    @to = params[:to] ? parse_date(params[:to]) : nil
-    @events = @organisation.events_including_cohosted
-    @events = params[:order] == 'created_at' ? @events.order('created_at desc') : @events.order('start_time asc')
-    q_ids = []
-    q_ids += search_events(params[:q]).pluck(:id) if params[:q]
-    event_tag_ids = []
-    event_tag_ids = EventTagship.and(event_tag_id: params[:event_tag_id]).pluck(:event_id) if params[:event_tag_id]
-    event_ids = (!q_ids.empty? && !event_tag_ids.empty? ? (q_ids & event_tag_ids) : (q_ids + event_tag_ids))
-    @events = @events.and(:id.in => event_ids) unless event_ids.empty?
-    @events = @events.and(local_group_id: params[:local_group_id]) if params[:local_group_id]
-    @events = @events.and(activity_id: params[:activity_id]) if params[:activity_id]
-    @events = @events.and(coordinator_id: params[:coordinator_id]) if params[:coordinator_id]
-    @events = @events.and(coordinator_id: nil) if params[:no_coordinator]
-    @events = @events.and(:id.nin => EventFacilitation.pluck(:event_id)) if params[:no_facilitators]
-    @events = @events.and(:start_time.gte => @from)
-    @events = @events.and(:start_time.lt => @to + 1) if @to
-    @events = @events.online if params[:online]
-    @events = @events.in_person if params[:in_person]
-    erb :'organisations/event_stats'
+    if @organisation.organisationships.find_by(account: @account)
+      flash[:warning] = 'That person is already following the organisation'
+    else
+      @organisation.organisationships.create! account: @account
+    end
+
+    redirect back
   end
 
   post '/o/:slug/organisationships/admin' do
@@ -405,30 +255,6 @@ Dandelion::App.controller do
     end
   end
 
-  get '/organisationships/:id/disconnect' do
-    sign_in_required!
-    @organisationship = current_account.organisationships.find(params[:id]) || not_found
-    @organisationship.update_attribute(:stripe_connect_json, nil)
-    redirect "/o/#{@organisationship.organisation.slug}"
-  end
-
-  get '/o/:slug/stripe_connect' do
-    sign_in_required!
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    @organisationship = current_account.organisationships.find_by(organisation: @organisation) || current_account.organisationships.create(organisation: @organisation)
-    begin
-      response = Mechanize.new.post 'https://connect.stripe.com/oauth/token', client_secret: @organisation.stripe_sk, code: params[:code], grant_type: 'authorization_code'
-      @organisationship.update_attribute(:stripe_connect_json, response.body)
-      Stripe.api_key = @organisation.stripe_sk
-      Stripe.api_version = '2020-08-27'
-      @organisationship.update_attribute(:stripe_account_json, Stripe::Account.retrieve(@organisationship.stripe_user_id).to_json)
-      flash[:notice] = "Connected to #{@organisation.name}!"
-    rescue StandardError
-      flash[:error] = 'There was an error connecting your account'
-    end
-    redirect "/o/#{@organisation.slug}"
-  end
-
   get '/o/:slug/organisationship' do
     sign_in_required!
     @organisation = Organisation.find_by(slug: params[:slug]) || not_found
@@ -444,7 +270,7 @@ Dandelion::App.controller do
       organisationship.update_attribute(:unsubscribed, false)
     end
     if request.xhr?
-      partial :'organisations/organisationship', locals: { organisation: @organisation, btn_class: params[:btn_class] }
+      partial :'organisations/organisationship', locals: { organisation: @organisation, membership_toggle: params[:membership_toggle], btn_class: params[:btn_class] }
     else
       redirect "/o/#{@organisation.slug}"
     end
@@ -457,29 +283,6 @@ Dandelion::App.controller do
     @organisationship.update_attribute(:unsubscribed, true)
     flash[:notice] = "You were unsubscribed from #{@organisation.name}."
     redirect '/accounts/subscriptions'
-  end
-
-  get '/o/:slug/subscribe_discussion' do
-    sign_in_required!
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    @organisationship = current_account.organisationships.find_by(organisation: @organisation) || current_account.organisationships.create(organisation: @organisation)
-    partial :'organisations/subscribe_discussion', locals: { organisationship: @organisationship }
-  end
-
-  get '/o/:slug/set_subscribe_discussion' do
-    sign_in_required!
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    @organisationship = current_account.organisationships.find_by(organisation: @organisation) || current_account.organisationships.create(organisation: @organisation)
-    @organisationship.update_attribute(:subscribed_discussion, true)
-    request.xhr? ? 200 : redirect('/accounts/subscriptions')
-  end
-
-  get '/o/:slug/unsubscribe_discussion' do
-    sign_in_required!
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    @organisationship = current_account.organisationships.find_by(organisation: @organisation) || current_account.organisationships.create(organisation: @organisation)
-    @organisationship.update_attribute(:subscribed_discussion, false)
-    request.xhr? ? 200 : redirect('/accounts/subscriptions')
   end
 
   get '/o/:slug/tiers' do
@@ -573,7 +376,8 @@ Dandelion::App.controller do
   post '/o/:slug/followers' do
     @organisation = Organisation.find_by(slug: params[:slug]) || not_found
     organisation_admins_only!
-    @organisation.import_from_csv(File.read(params[:csv]))
+    @organisation.import_from_csv(File.read(params[:csv]), :organisationships)
+    flash[:notice] = 'The followers will be added shortly. Refresh the page to check progress.'
     redirect "/o/#{@organisation.slug}/followers"
   end
 
@@ -697,21 +501,6 @@ Dandelion::App.controller do
     200
   end
 
-  get '/o/:slug/subscribed_discussion/:organisationship_id' do
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    organisation_admins_only!
-    @organisationship = @organisation.organisationships.find(params[:organisationship_id]) || not_found
-    partial :'organisations/subscribed_discussion', locals: { organisationship: @organisationship }
-  end
-
-  post '/o/:slug/subscribed_discussion/:organisationship_id' do
-    @organisation = Organisation.find_by(slug: params[:slug]) || not_found
-    organisation_admins_only!
-    @organisationship = @organisation.organisationships.find(params[:organisationship_id]) || not_found
-    @organisationship.update_attribute(:subscribed_discussion, params[:subscribed_discussion])
-    200
-  end
-
   get '/organisationships/:id/notes' do
     @organisationship = Organisationship.find(params[:id]) || not_found
     @organisation = @organisationship.organisation
@@ -740,5 +529,45 @@ Dandelion::App.controller do
     organisation_admins_only!
     @carousels = @organisation.carousels.order('o asc')
     erb :'carousels/carousels'
+  end
+
+  get '/organisationships/:id/monthly_donation' do
+    organisationship = Organisationship.find(params[:id]) || not_found
+    @organisation = organisationship.organisation
+    organisation_admins_only!
+    partial :'organisations/monthly_donation', locals: { organisationship: organisationship }
+  end
+
+  post '/organisationships/:id/monthly_donation' do
+    organisationship = Organisationship.find(params[:id]) || not_found
+    @organisation = organisationship.organisation
+    organisation_admins_only!
+    organisationship.update_attributes(
+      monthly_donation_amount: params[:amount],
+      monthly_donation_method: 'Other',
+      monthly_donation_currency: @organisation.currency
+    )
+    200
+  end
+
+  get '/organisations/stylesheet.css' do
+    content_type 'text/css'
+    theme_color = params[:theme_color] || '00B963'
+
+    # Sanitize the input (only allow valid hex colors)
+    theme_color = theme_color.gsub(/[^0-9A-Fa-f]/, '')
+    theme_color = '00B963' unless theme_color.match?(/^([0-9A-Fa-f]{3}){1,2}$/)
+
+    # Add the # prefix if it's missing
+    theme_color = "##{theme_color}" unless theme_color.start_with?('#')
+
+    # Read the base SCSS file
+    scss_content = File.read(Padrino.root('app/assets/stylesheets/organisation.scss'))
+
+    # Replace the default variable with our parameter
+    scss_content.sub!(/\$theme-color:.*?;/, "$theme-color: #{theme_color};")
+
+    # Compile the SCSS to CSS
+    Sass::Engine.new(scss_content, syntax: :scss).render
   end
 end

@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta content="width=700, maximum-scale=1.0" name="viewport">
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title><%= pmail.subject %></title>
     <style data-premailer="ignore">
       .d-none { display: none }
@@ -63,10 +64,13 @@
       You're receiving this email because you're <%= pmail.reason %>
       <span class="%recipient.footer_class%">
         <br>
-        <a href="<%= ENV['BASE_URI'] %>/accounts/subscriptions?sign_in_token=%recipient.token%">Manage your subscriptions</a>
+        <a href="<%= ENV['BASE_URI'] %>/accounts/subscriptions?sign_in_token=%recipient.token%">Manage your notifications</a>
         &middot;
         <a href="<%= ENV['BASE_URI'] %>/o/<%= pmail.organisation.slug %>/unsubscribe?sign_in_token=%recipient.token%">Unsubscribe from <%= pmail.organisation.name %></a>
       </span>
+      <div style="margin-top: 10px">
+        <a target="_blank" href="https://dandeliondotevents.substack.com/"><img src="<%= ENV['BASE_URI'] %>/images/substack.png" style="height: 18px; margin-right: 3px;"></a>
+      </div>
     </div>
   </body>
 </html>

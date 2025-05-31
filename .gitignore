@@ -10,6 +10,8 @@ nbproject
 dragonfly.log
 app/assets/stylesheets/app.css
 app/assets/stylesheets/app.css.map
+app/assets/stylesheets/organisation.css
+app/assets/stylesheets/organisation.css.map
 capybara
 node_modules
 *.js.map
@@ -38,3 +40,7 @@ _yardoc
 doc/
 
 .idea/
+.aider.*
+code.md
+GeoLite2-City.mmdb
+repomix-output.xml

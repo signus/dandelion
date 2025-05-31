@@ -2,7 +2,7 @@
   <div class="form-group mb-1 mr-1">
     <div class="input-group">
       <div class="input-group-prepend">
-        <span class="input-group-text"><%= Money.new(0, @gathering.currency).symbol %></span>
+        <span class="input-group-text"><%= money_symbol(@gathering.currency) %></span>
       </div>
       <% if @gathering.enable_partial_payments %>
         <%= number_field_tag :amount, value: (amount if defined?(amount)), style: 'width: 5em;', required: 'required', class: 'form-control', id: 'amount' %>
@@ -15,30 +15,23 @@
   <% if @gathering.stripe_sk && FIAT_CURRENCIES.include?(@gathering.currency) %>
     <button data-payment-method="stripe" type="submit" class="btn btn-default mb-1 ml-0 mr-1" style="height: 2.125rem">
       Pay with card
-      <i class="fa fa-spin fa-circle-o-notch" style="display: none"></i>
+      <i class="bi bi-spin bi-arrow-repeat" style="display: none"></i>
     </button>
     <%= hidden_field_tag :payment_method, value: 'stripe', disabled: true %>
   <% end %>
   <% if @gathering.coinbase_api_key && (FIAT_CURRENCIES.include?(@gathering.currency) || COINBASE_CURRENCIES.include?(@gathering.currency)) %>
     <button data-payment-method="coinbase" type="submit" class="btn btn-default mb-1 ml-0 mr-1" style="height: 2.125rem">
       Pay with crypto
-      <i class="fa fa-spin fa-circle-o-notch" style="display: none"></i>
+      <i class="bi bi-spin bi-arrow-repeat" style="display: none"></i>
     </button>
     <%= hidden_field_tag :payment_method, value: 'coinbase', disabled: true %>
-  <% end %>
-  <% if @gathering.seeds_username && @gathering.currency == 'SEEDS' %>
-    <button data-payment-method="seeds" type="submit" class="btn btn-default mb-1 ml-0 mr-1" style="height: 2.125rem">
-      <span>Pay with SEEDS</span>
-      <i class="fa fa-spin fa-circle-o-notch" style="display: none"></i>
-    </button>
-    <%= hidden_field_tag :payment_method, value: 'seeds', disabled: true %>
   <% end %>
   <% if @gathering.evm_address && EVM_CURRENCIES.include?(@gathering.currency) %>
     <button data-payment-method="evm" type="submit" class="btn btn-default mb-1 ml-0 mr-1" style="height: 2.125rem">
       <span>
-        Pay with <%= @gathering.chain %>
+        Pay with <%= @gathering.chain.name %>
       </span>
-      <i class="fa fa-spin fa-circle-o-notch" style="display: none"></i>
+      <i class="bi bi-spin bi-arrow-repeat" style="display: none"></i>
     </button>
     <%= hidden_field_tag :payment_method, value: 'evm', disabled: true %>
   <% end %>
@@ -50,7 +43,7 @@
   $(function () {
 
     currency = <%== @gathering.currency.to_json %>
-    currencySymbol = <%== Money.new(0, @gathering.currency).symbol.to_json %>
+    currencySymbol = <%== money_symbol(@gathering.currency).to_json %>
 
     $('#pay-form button[data-payment-method]').click(function () {
       $('input[type=hidden][name=payment_method]').attr('disabled', true)
@@ -68,28 +61,12 @@
         } else if (data['checkout_id']) {
           // Coinbase
           window.location = 'https://commerce.coinbase.com/checkout/' + data['checkout_id']
-        } else if (data['seeds_secret']) {
-          // SEEDS
-          seedsUsername = <%== @gathering.seeds_username.to_json %>
-          $('#owed').hide()
-          $('#pay-with-seeds').show()
-          $('#pay-with-seeds').find('.card-body p.lead.please').html('Open the SEEDS app and send <strong>' + data['seeds_amount'] + ' SEEDS</strong> to <strong>' + seedsUsername + '</strong> with the memo')
-          $('#pay-with-seeds').find('.card-body p.lead.memo').html(data['seeds_secret'])
-          var offset = $('#pay-with-seeds').offset()
-          window.scrollTo(0, offset['top'] - $('#header').height() - 10);
-          setInterval(function() {
-            if (Date.now() < data['payment_attempt_expiry'])
-              $.getJSON('/g/<%=@gathering.slug%>/payment_attempts/' + data['payment_attempt_id'] , function(_data) {
-                if (_data['payment_completed'])
-                  window.location = '/g/<%=@gathering.slug%>/options'
-              })
-          }, 30 * 1000);
         } else if (data['evm_secret']) {
           // EVM
           evmAddress = <%== @gathering.evm_address.to_json %>
-          contractAddress = <%== EVM_CONTRACT_ADDRESSES[@gathering.currency].to_json %>
-          networkId = <%= @gathering.network_id %>
-          networkName = '<%=@gathering.chain%>'
+          contractAddress = <%== @gathering.currency == 'USD' ? Token.object('BREAD').contract_address.to_json : @gathering.token.try(:contract_address).to_json %>
+          networkId = <%= @gathering.chain.try(:network_id) %>
+          networkName = '<%=@gathering.chain.try(:name) %>'
           $('#owed').hide()
           $('#pay-with-evm').show()
           $('#pay-with-evm').find('.card-body p.lead.please').html('Send EXACTLY <strong>' + data['evm_amount'] + ' ' + currency + '</strong> to <strong>' + evmAddress + '</strong>')
@@ -102,7 +79,6 @@
             if (thisNetworkId != networkId) {
               $('#pay-with-evm').find('.card-body p.web3wallet').html("<mark>Please switch your web3 wallet's network to " + networkName + '</mark>')
               ethereum.on('chainChanged', function() {
-                console.log('chainChanged')
                 web3.eth.net.getId().then(thisNetworkId => {
                   if (thisNetworkId == networkId)
                     connectWeb3Wallet()
@@ -115,7 +91,6 @@
 
           function connectWeb3Wallet() {
             if (!ethereum.selectedAddress) {
-              console.log('connecting')
               $('#pay-with-evm').find('.card-body p.web3wallet').html('<a href="javascript:;">Connect your web3 wallet</a>')
               $('#pay-with-evm').find('.card-body p.web3wallet a').click(function() {
                 ethereum.request({
@@ -128,7 +103,6 @@
           }
 
           function pay() {
-            console.log('paying')
             $('#pay-with-evm').find('.card-body p.web3wallet').remove()
 
             var abi = [{
@@ -177,6 +151,5 @@
       return false
 
     })
-    console.log('paying')
   })
 </script>

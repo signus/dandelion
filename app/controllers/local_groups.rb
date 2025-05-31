@@ -27,25 +27,26 @@ Dandelion::App.controller do
 
   get '/local_groups/:id/events/stats' do
     @local_group = LocalGroup.find(params[:id]) || not_found
-    @organisation = @local_group.organisation
     local_group_admins_only!
     @from = params[:from] ? parse_date(params[:from]) : Date.today
     @to = params[:to] ? parse_date(params[:to]) : nil
+    @start_or_end = (params[:start_or_end] == 'end' ? 'end' : 'start')
     @events = @local_group.events
-    @events = params[:order] == 'created_at' ? @events.order('created_at desc') : @events.order('start_time asc')
+    @events = params[:order] == 'created_at' ? @events.order('created_at desc') : @events.order("#{@start_or_end}_time asc")
     q_ids = []
     q_ids += search_events(params[:q]).pluck(:id) if params[:q]
     event_tag_ids = []
     event_tag_ids = EventTagship.and(event_tag_id: params[:event_tag_id]).pluck(:event_id) if params[:event_tag_id]
     event_ids = (!q_ids.empty? && !event_tag_ids.empty? ? (q_ids & event_tag_ids) : (q_ids + event_tag_ids))
     @events = @events.and(:id.in => event_ids) unless event_ids.empty?
+    @events = @events.and(:"#{@start_or_end}_time".gte => @from)
+    @events = @events.and(:"#{@start_or_end}_time".lt => @to + 1) if @to
     @events = @events.and(coordinator_id: params[:coordinator_id]) if params[:coordinator_id]
     @events = @events.and(coordinator_id: nil) if params[:no_coordinator]
-    @events = @events.and(:start_time.gte => @from)
-    @events = @events.and(:start_time.lt => @to + 1) if @to
+    @events = @events.and(:id.nin => EventFacilitation.pluck(:event_id)) if params[:no_facilitators]
     @events = @events.online if params[:online]
     @events = @events.in_person if params[:in_person]
-    erb :'local_groups/event_stats'
+    erb :'events/event_stats'
   end
 
   get '/local_groups/:id/edit' do
@@ -70,6 +71,33 @@ Dandelion::App.controller do
     @local_group = LocalGroup.find(params[:id]) || not_found
     local_group_admins_only!
     erb :'local_groups/stats'
+  end
+
+  post '/local_groups/:id/add_follower' do
+    @local_group = LocalGroup.find(params[:id]) || not_found
+    local_group_admins_only!
+
+    unless params[:email]
+      flash[:error] = 'Please provide an email address'
+      redirect back
+    end
+
+    unless (@account = Account.find_by(email: params[:email].downcase))
+      @account = Account.new(name: params[:email].split('@').first, email: params[:email], password: Account.generate_password)
+      unless @account.save
+        flash[:error] = '<strong>Oops.</strong> Some errors prevented the account from being saved.'
+        redirect back
+      end
+    end
+
+    if @local_group.local_groupships.find_by(account: @account)
+      flash[:warning] = 'That person is already following the local group'
+    else
+      @local_group.organisation.organisationships.create account: @account
+      @local_group.local_groupships.create! account: @account
+    end
+
+    redirect back
   end
 
   get '/local_groups/:id/receive_feedback/:f' do
@@ -112,29 +140,6 @@ Dandelion::App.controller do
     redirect '/accounts/subscriptions'
   end
 
-  get '/local_groups/:id/subscribe_discussion' do
-    sign_in_required!
-    @local_group = LocalGroup.find(params[:id]) || not_found
-    @local_groupship = current_account.local_groupships.find_by(local_group: @local_group) || current_account.local_groupships.create(local_group: @local_group)
-    partial :'local_groups/subscribe_discussion', locals: { local_groupship: @local_groupship }
-  end
-
-  get '/local_groups/:id/set_subscribe_discussion' do
-    sign_in_required!
-    @local_group = LocalGroup.find(params[:id]) || not_found
-    @local_groupship = current_account.local_groupships.find_by(local_group: @local_group) || current_account.local_groupships.create(local_group: @local_group)
-    @local_groupship.update_attribute(:subscribed_discussion, true)
-    request.xhr? ? 200 : redirect('/accounts/subscriptions')
-  end
-
-  get '/local_groups/:id/unsubscribe_discussion' do
-    sign_in_required!
-    @local_group = LocalGroup.find(params[:id]) || not_found
-    @local_groupship = current_account.local_groupships.find_by(local_group: @local_group) || current_account.local_groupships.create(local_group: @local_group)
-    @local_groupship.update_attribute(:subscribed_discussion, false)
-    request.xhr? ? 200 : redirect('/accounts/subscriptions')
-  end
-
   get '/local_groups/:id/local_groupship' do
     sign_in_required!
     @local_group = LocalGroup.find(params[:id]) || not_found
@@ -149,7 +154,7 @@ Dandelion::App.controller do
       local_groupship = current_account.local_groupships.find_by(local_group: @local_group) || current_account.local_groupships.create(local_group: @local_group)
       local_groupship.update_attribute(:unsubscribed, false)
     end
-    request.xhr? ? (partial :'local_groups/local_groupship', locals: { local_group: @local_group, btn_class: params[:btn_class] }) : redirect("/local_groups/#{@local_group.id}")
+    request.xhr? ? (partial :'activities_and_local_groups/resourceship', locals: { resource: @local_group, resourceship_name: 'local_groupship', resource_path: "/local_groups/#{@local_group.id}", membership_toggle: params[:membership_toggle], btn_class: params[:btn_class] }) : redirect("/local_groups/#{@local_group.id}")
   end
 
   get '/local_groups/:id/hide_membership' do
@@ -180,7 +185,7 @@ Dandelion::App.controller do
       @local_groupships = @local_groupships.paginate(page: params[:page], per_page: 25)
       erb :'local_groups/followers'
     when :csv
-      @local_group.send_followers_csv(current_account)
+      @local_group.send_followers_csv(current_account, :local_groupships)
       flash[:notice] = 'You will receive the CSV via email shortly.'
       redirect back
     end
@@ -189,7 +194,8 @@ Dandelion::App.controller do
   post '/local_groups/:id/followers' do
     @local_group = LocalGroup.find(params[:id]) || not_found
     local_group_admins_only!
-    @local_group.import_from_csv(File.read(params[:csv]))
+    @local_group.import_from_csv(File.read(params[:csv]), :local_groupships)
+    flash[:notice] = 'The followers will be added shortly. Refresh the page to check progress.'
     redirect "/local_groups/#{@local_group.id}/followers"
   end
 
@@ -225,26 +231,11 @@ Dandelion::App.controller do
     200
   end
 
-  get '/local_groups/:id/subscribed_discussion/:local_groupship_id' do
-    @local_group = LocalGroup.find(params[:id]) || not_found
-    local_group_admins_only!
-    @local_groupship = @local_group.local_groupships.find(params[:local_groupship_id]) || not_found
-    partial :'local_groups/subscribed_discussion', locals: { local_groupship: @local_groupship }
-  end
-
-  post '/local_groups/:id/subscribed_discussion/:local_groupship_id' do
-    @local_group = LocalGroup.find(params[:id]) || not_found
-    local_group_admins_only!
-    @local_groupship = @local_group.local_groupships.find(params[:local_groupship_id]) || not_found
-    @local_groupship.update_attribute(:subscribed_discussion, params[:subscribed_discussion])
-    200
-  end
-
   get '/local_groups/:id/discount_codes' do
     @local_group = LocalGroup.find(params[:id]) || not_found
     local_group_admins_only!
     @discount_codes = @local_group.discount_codes
-    @scope = "activity_id=#{@local_group.id}"
+    @scope = "local_group_id=#{@local_group.id}"
     erb :'discount_codes/discount_codes'
   end
 end

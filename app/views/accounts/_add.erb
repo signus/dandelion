@@ -6,16 +6,16 @@
 <% if add_and_remove %>
   <div>
     <a id="add-role" href="javascript:;" onclick="$(this).hide().next().show();
-        $('#remove-role').hide()"><i class="fa fa-plus-square"></i></a>
+        $('#remove-role').hide()"><i class="bi bi-plus-square-fill"></i></a>
     <div style="display: none">
       <% form_for new_object, new_url do |f| %>
         <%= f.lookup_block :account_id, lookup_url: '/accounts.json', placeholder: 'Search accounts' %>
         <%= f.submit_block button_text: "Add #{role}" %>
       <% end %>
     </div>
-    <% if accounts.count > 0 %>
+    <% if accounts.count > (defined?(min_accounts) ? min_accounts : 0) %>
       <a id="remove-role" href="javascript:;" onclick="$(this).hide().next().show();
-        $('#add-role').hide()"><i class="fa fa-minus-square"></i></a>
+        $('#add-role').hide()"><i class="bi bi-dash-square-fill"></i></a>
       <div style="display: none">
         <% form_tag destroy_url do |f| %>
           <%= select_tag :account_id, options: accounts.map { |account| ["#{account.name} (#{account.username})", account.id] }, class: 'form-control mb-1' %>

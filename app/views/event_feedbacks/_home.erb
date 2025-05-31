@@ -15,7 +15,7 @@
   })
 </script>
 <div class="grid mt-5">
-  <% account_ids = []; EventFeedback.and(:event_id.in => Event.pluck(:id), :account_id.in => Account.and(:picture_uid.ne => nil).pluck(:id), :anonymise.ne => true, :public_answers.ne => nil, :rating => 5).order('created_at desc').limit(10).each { |event_feedback|
+  <% account_ids = []; EventFeedback.and(:event_id.in => Event.pluck(:id), :account_id.in => Account.and(:image_uid.ne => nil).pluck(:id), :anonymise.ne => true, :public_answers.ne => nil, :rating => 5).order('created_at desc').limit(10).each { |event_feedback|
   account = event_feedback.account
   next unless account.public?
   next if account.name.include?('_')
@@ -23,18 +23,18 @@
   <div class="grid-sizer"></div>
   <div class="grid-item">
 
-    <div class="row">
-      <div class="col-auto"><i class="fa fa-quote-left"></i></div>
+    <div class="row no-gutters">
+      <div class="col-auto mr-2"><i class="bi bi-quote"></i></div>
       <div class="col">
-        <p class="lead mb-0">
+        <big>
           <%= partial :'accounts/square', locals: { klass: 'float-left mr-3 mb-3', account: account, width: '150px' } %>
           <a class="home-feedback" href="/events/<%= event_feedback.event.id %>">
-            <%== Sanitize.fragment(event_feedback.public_answers.map { |qa| qa[1] unless qa[1].blank? }.compact.join('<br /><br />'), Sanitize::Config::DANDELION) %>
+            <%== Sanitize.fragment(event_feedback.public_answers.map { |q,a| a unless a.blank? }.compact.join('<br /><br />'), Sanitize::Config::DANDELION) %>
           </a>
-        </p>
+        </big>
 
         <div class="my-2" style="font-size: 2em; white-space: nowrap;">
-          <% event_feedback.rating.times do %><i class="fa fa-star"></i><% end %>
+          <% event_feedback.rating.times do %><i class="bi bi-star-fill"></i><% end %>
         </div>
 
         <p class="mb-5">

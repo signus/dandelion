@@ -3,6 +3,8 @@ class Cohostship
   include Mongoid::Timestamps
   extend Dragonfly::Model
 
+  include ImageWithValidation
+
   belongs_to :event, index: true
   belongs_to :organisation, index: true
 
@@ -20,29 +22,14 @@ class Cohostship
 
   dragonfly_accessor :video
 
-  dragonfly_accessor :image
   before_validation do
     if image
       begin
-        if %w[jpeg png gif pam].include?(image.format)
-          image.name = "#{SecureRandom.uuid}.#{image.format}"
-        else
-          errors.add(:image, 'must be an image')
-        end
-      rescue StandardError
-        self.image = nil
-        errors.add(:image, 'must be an image')
-      end
-
-      begin
-        self.image = image.encode('jpg') if image && !%w[jpg jpeg].include?(image.format)
+        errors.add(:image, 'must be at least 992px wide') if image && image.width < 800 # legacy images are 800px
+        errors.add(:image, 'must be more wide than high') if image && image.height > image.width
       rescue StandardError
         self.image = nil
       end
-
-      errors.add(:image, 'must be at least 992px wide') if image && image.width < 800 # legacy images are 800px
-      errors.add(:image, 'must be more wide than high') if image && image.height > image.width
-
     end
   end
 
